@@ -103,7 +103,7 @@ jobs:
         run: |
           cd bee_sdk
           rm -rf pkg
-          wasm-pack build --target web --release
+          wasm-pack build --target web --release --scope teamgosh
 
       - name: Validate package version
         shell: bash
@@ -130,7 +130,7 @@ jobs:
         if: ${{ inputs.publish_npm && !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish ./bee_sdk/pkg --tag latest
+        run: npm publish ./bee_sdk/pkg --tag latest --access public
 
       - name: Create and push git tag
         if: ${{ !inputs.dry_run }}
