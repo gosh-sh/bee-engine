@@ -168,7 +168,7 @@ fn resolve_mirror_for_multifactor(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("Invalid multifactor address format: {multifactor_address}"))?;
 
-    Mirror::new(tvm_client, tail.to_string()).map_err(|e| format!("Mirror::new ({e})"))
+    Mirror::new(tvm_client, tail).map_err(|e| format!("Mirror::new ({e})"))
 }
 
 #[cfg(test)]
