@@ -1,0 +1,14 @@
+[package]
+name = "bee-infra"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+wasm = ["dep:gloo-timers"]
+
+[dependencies]
+gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
+
+[dev-dependencies]
+futures = "0.3.31"

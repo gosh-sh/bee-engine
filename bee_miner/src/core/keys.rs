@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ackinacki_kit::contracts::mvsystem::miner::contract::Miner;
 use ackinacki_kit::tvm_client::crypto::KeyPair;
 use ackinacki_kit::tvm_client::crypto::ParamsOfMnemonicDeriveSignKeys;
 use ackinacki_kit::tvm_client::crypto::ParamsOfMnemonicFromRandom;
@@ -11,6 +12,16 @@ use serde::Serialize;
 
 const MINING_WORD_COUNT: u8 = 24;
 const DEEPLINK_RESOLVER_URL: &str = "https://links.gosh.sh";
+
+#[derive(Debug, Clone)]
+pub struct ParamsOfEnsureMiningKeysPropagated {
+    pub client_config: ClientConfig,
+    pub miner_address: String,
+    pub app_id: String,
+    pub expected_owner_public: String,
+    pub max_attempts: Option<u32>,
+    pub interval_ms: Option<u64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct ResultOfGenMiningKeys {
@@ -65,6 +76,35 @@ pub async fn gen_mining_keys(app_id: impl AsRef<str>) -> Result<ResultOfGenMinin
         deep_link: ResultOfGenMiningKeys::deep_link(&key_pair.public, app_id.as_ref())?,
         keys: key_pair,
     })
+}
+
+pub async fn ensure_mining_keys_propagated(
+    params: ParamsOfEnsureMiningKeysPropagated,
+) -> Result<(), String> {
+    let context = Arc::new(
+        ClientContext::new(params.client_config)
+            .map_err(|e| format!("Create tvm client context ({e})"))?,
+    );
+    let miner = Arc::new(Miner::new(context, &params.miner_address));
+    let app_id = params.app_id;
+    let expected_owner_public = params.expected_owner_public;
+
+    bee_infra::poll_until(
+        || {
+            let miner = miner.clone();
+            async move {
+                miner
+                    .get_details()
+                    .await
+                    .map_err(|e| format!("ensure_mining_keys_propagated: miner.get_details ({e})"))
+            }
+        },
+        move |details| details.owner_public.get(&app_id) == Some(&expected_owner_public),
+        params.max_attempts,
+        params.interval_ms,
+    )
+    .await
+    .map(|_| ())
 }
 
 #[cfg(test)]

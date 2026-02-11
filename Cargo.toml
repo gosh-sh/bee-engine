@@ -1,7 +1,7 @@
 
 [workspace]
 resolver = "3"
-members = ["bee_sdk", "bee_miner", "bee_shared", "bee_verifier"]
+members = ["bee_sdk", "bee_miner", "bee_shared", "bee_verifier", "bee_infra"]
 
 [workspace.dependencies]
 blake3 = "1.8.2"

@@ -14,6 +14,7 @@ wasm = [
     "dep:wasm-bindgen",
     "dep:serde-wasm-bindgen",
     "dep:js-sys",
+    "bee-infra/wasm",
     "ackinacki-kit/wasm",
     "ackinacki-kit/contracts",
 ]
@@ -30,6 +31,7 @@ hex.workspace = true
 js-sys = { optional = true, version = "0.3.83" }
 rs_merkle.workspace = true
 bee-shared = { path = "../bee_shared" }
+bee-infra = { path = "../bee_infra", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 thiserror = "2.0.17"
