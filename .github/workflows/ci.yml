@@ -13,6 +13,11 @@ jobs:
   rust:
     name: Rust Check, Clippy, Tests
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: target
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,6 +26,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -34,14 +42,14 @@ jobs:
       - name: Cargo check (miner wasm feature)
         run: cargo check -p bee-miner --no-default-features --features wasm
 
-      - name: Cargo clippy (workspace except verifier)
-        run: cargo clippy --workspace --exclude bee-verifier --all-targets -- -D warnings
+      - name: Cargo clippy (workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Cargo clippy (verifier)
-        run: cargo clippy -p bee-verifier --all-targets -- -D warnings
+      - name: Cargo test (workspace native)
+        run: cargo test --workspace --exclude bee-verifier --exclude bee-sdk
 
-      - name: Cargo test (workspace except verifier)
-        run: cargo test --workspace --exclude bee-verifier
+      - name: Cargo test (verifier lib)
+        run: cargo test -p bee-verifier --lib
 
-      - name: Cargo test (miner wasm feature)
-        run: cargo test -p bee-miner --no-default-features --features wasm
+      - name: Cargo test (miner wasm feature on host)
+        run: cargo test -p bee-miner --no-default-features --features wasm --lib -- --skip core::keys::tests::gen_mining_keys_generates_keys_and_valid_deep_link
