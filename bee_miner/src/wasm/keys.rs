@@ -5,6 +5,7 @@ use wasm_bindgen::JsError;
 use wasm_bindgen::JsValue;
 
 use crate::core::keys::ParamsOfEnsureMiningKeysPropagated;
+use crate::core::keys::ParamsOfGetMinerAddressByWalletName;
 use crate::core::keys::ResultOfGenMiningKeys as CoreResultOfGenMiningKeys;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -17,12 +18,20 @@ export type TParamsOfEnsureMiningKeysPropagated = {
     max_attempts?: number;
     interval_ms?: number;
 };
+
+export type TParamsOfGetMinerAddressByWalletName = {
+    client_config: Record<string, unknown>;
+    wallet_name: string;
+};
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "TParamsOfEnsureMiningKeysPropagated")]
     pub type TParamsOfEnsureMiningKeysPropagated;
+
+    #[wasm_bindgen(typescript_type = "TParamsOfGetMinerAddressByWalletName")]
+    pub type TParamsOfGetMinerAddressByWalletName;
 }
 
 #[wasm_bindgen]
@@ -71,6 +80,12 @@ struct ParamsOfEnsureMiningKeysPropagatedWasm {
     interval_ms: Option<u64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ParamsOfGetMinerAddressByWalletNameWasm {
+    client_config: ClientConfig,
+    wallet_name: String,
+}
+
 #[wasm_bindgen(js_name = gen_mining_keys)]
 pub async fn gen_mining_keys(app_id: String) -> Result<ResultOfGenMiningKeys, JsError> {
     let result = crate::core::keys::gen_mining_keys(app_id)
@@ -101,4 +116,23 @@ pub async fn ensure_mining_keys_propagated(
     })
     .await
     .map_err(|e| JsError::new(&format!("Failed to ensure mining keys propagated: {e}")))
+}
+
+#[wasm_bindgen(js_name = get_miner_address_by_wallet_name)]
+pub async fn get_miner_address_by_wallet_name(
+    params: TParamsOfGetMinerAddressByWalletName,
+) -> Result<String, JsError> {
+    let params: ParamsOfGetMinerAddressByWalletNameWasm =
+        serde_wasm_bindgen::from_value(JsValue::from(params)).map_err(|e| {
+            JsError::new(&format!(
+                "Failed to deserialize get_miner_address_by_wallet_name params: {e}"
+            ))
+        })?;
+
+    crate::core::keys::get_miner_address_by_wallet_name(ParamsOfGetMinerAddressByWalletName {
+        client_config: params.client_config,
+        wallet_name: params.wallet_name,
+    })
+    .await
+    .map_err(|e| JsError::new(&format!("Failed to get miner address by wallet name: {e}")))
 }

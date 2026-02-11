@@ -153,8 +153,7 @@ mod tests {
     #[test]
     fn test_hash() {
         let computed_leaf = ComputedLeaf {
-            hash: "0011ffde34458bb9369bd0336a3f437263ffe3edf4a0bdcb5e89ae9a44736275"
-                .decode_hex(),
+            hash: "0011ffde34458bb9369bd0336a3f437263ffe3edf4a0bdcb5e89ae9a44736275".decode_hex(),
             nonce: 2249,
             index: 10,
             seed: "0x0000".to_string(),

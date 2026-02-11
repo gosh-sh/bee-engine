@@ -42,3 +42,4 @@ web-sys = { version = "0.3.83", features = ["console"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.56"
+tokio = { version = "1", features = ["macros", "rt"] }
