@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust Check, Clippy, Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo check (workspace except verifier)
+        run: cargo check --workspace --exclude bee-verifier
+
+      - name: Cargo check (verifier)
+        run: cargo check -p bee-verifier
+
+      - name: Cargo check (miner wasm feature)
+        run: cargo check -p bee-miner --no-default-features --features wasm
+
+      - name: Cargo clippy (workspace except verifier)
+        run: cargo clippy --workspace --exclude bee-verifier --all-targets -- -D warnings
+
+      - name: Cargo clippy (verifier)
+        run: cargo clippy -p bee-verifier --all-targets -- -D warnings
+
+      - name: Cargo test (workspace except verifier)
+        run: cargo test --workspace --exclude bee-verifier
+
+      - name: Cargo test (miner wasm feature)
+        run: cargo test -p bee-miner --no-default-features --features wasm

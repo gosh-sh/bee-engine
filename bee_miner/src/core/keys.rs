@@ -66,3 +66,41 @@ pub async fn gen_mining_keys(app_id: impl AsRef<str>) -> Result<ResultOfGenMinin
         keys: key_pair,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use base64::Engine;
+    use futures::executor::block_on;
+    use serde::Deserialize;
+
+    use super::DEEPLINK_RESOLVER_URL;
+    use super::URL_SAFE_NO_PAD;
+
+    const APP_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+    #[derive(Debug, Deserialize)]
+    struct DecodedPayload {
+        pubkey: String,
+        app_id: String,
+    }
+
+    #[test]
+    fn gen_mining_keys_generates_keys_and_valid_deep_link() {
+        let result = block_on(super::gen_mining_keys(APP_ID)).expect("keys should be generated");
+
+        assert!(!result.keys.public.is_empty(), "public key should not be empty");
+        assert!(!result.keys.secret.is_empty(), "secret key should not be empty");
+
+        let prefix = format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/connect?payload=");
+        let payload =
+            result.deep_link.strip_prefix(&prefix).expect("deep link should have payload query");
+
+        let decoded_payload_bytes =
+            URL_SAFE_NO_PAD.decode(payload).expect("payload should be valid base64url");
+        let decoded_payload: DecodedPayload =
+            serde_json::from_slice(&decoded_payload_bytes).expect("payload should be valid json");
+
+        assert_eq!(decoded_payload.pubkey, result.keys.public);
+        assert_eq!(decoded_payload.app_id, APP_ID);
+    }
+}

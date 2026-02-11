@@ -8,8 +8,9 @@ version = "0.1.0"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+default = ["ackinacki-kit/default", "ackinacki-kit/contracts"]
 wasm = [
+    "dep:ackinacki-kit",
     "dep:wasm-bindgen",
     "dep:serde-wasm-bindgen",
     "dep:js-sys",
