@@ -137,7 +137,7 @@ jobs:
         if: ${{ inputs.publish_npm && !inputs.dry_run }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish bee_sdk/pkg --tag next
+        run: npm publish ./bee_sdk/pkg --tag next
 
       - name: Create and push git tag
         if: ${{ !inputs.dry_run }}
