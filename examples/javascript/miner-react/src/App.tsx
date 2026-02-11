@@ -2,17 +2,21 @@ import viteLogo from "/vite.svg";
 import reactLogo from "./assets/react.svg";
 import "./App.css";
 
-import { init, Miner } from "@bee-engine/miner";
+import { init, Miner, gen_mining_keys } from "@bee-engine/miner";
 import { useState } from "react";
+
+const APP_ID = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 async function initMiner() {
   await init({ module_or_path: "/bee_engine_miner_bg.wasm" });
+  const resultOfGenKeys = await gen_mining_keys(APP_ID)
+
   return await Miner.new(
     ["localhost"],
-    "0x0000000000000000000000000000000000000000000000000000000000000000",
+    APP_ID,
     "0:07226468b64d2745a7857fb745a2b4a3974f7bcce30b29d23b231587231e47a3",
-    "",
-    "",
+    resultOfGenKeys.public,
+    resultOfGenKeys.secret
   );
 }
 
