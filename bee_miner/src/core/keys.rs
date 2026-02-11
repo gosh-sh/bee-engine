@@ -171,7 +171,7 @@ fn resolve_mirror_for_multifactor(
     Mirror::new(tvm_client, tail).map_err(|e| format!("Mirror::new ({e})"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "wasm")))]
 mod tests {
     use ackinacki_kit::tvm_client::ClientConfig;
     use base64::Engine;
