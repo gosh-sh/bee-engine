@@ -2,17 +2,50 @@ import viteLogo from "/vite.svg";
 import reactLogo from "./assets/react.svg";
 import "./App.css";
 
-import { init, Miner } from "@bee-engine/miner";
+import {
+  ensure_mining_keys_propagated,
+  gen_mining_keys,
+  get_miner_address_by_wallet_name,
+  init,
+  Miner,
+} from "bee-sdk";
 import { useState } from "react";
+
+const APP_ID = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const WALLET_NAME = "demo_wallet";
+const ENDPOINTS = ["mainnet.ackinacki.org"];
 
 async function initMiner() {
   await init({ module_or_path: "/bee_engine_miner_bg.wasm" });
+  const resultOfGenKeys = await gen_mining_keys(APP_ID);
+  const minerAddress = await get_miner_address_by_wallet_name({
+    client_config: {
+      network: {
+        endpoints: ENDPOINTS,
+      },
+    },
+    wallet_name: WALLET_NAME,
+  });
+
+  await ensure_mining_keys_propagated({
+    client_config: {
+      network: {
+        endpoints: ENDPOINTS,
+      },
+    },
+    miner_address: minerAddress,
+    app_id: APP_ID,
+    expected_owner_public: resultOfGenKeys.public,
+    max_attempts: 30,
+    interval_ms: 1000,
+  });
+
   return await Miner.new(
-    ["localhost"],
-    "0x0000000000000000000000000000000000000000000000000000000000000000",
-    "0:07226468b64d2745a7857fb745a2b4a3974f7bcce30b29d23b231587231e47a3",
-    "",
-    "",
+    ENDPOINTS,
+    APP_ID,
+    minerAddress,
+    resultOfGenKeys.public,
+    resultOfGenKeys.secret,
   );
 }
 

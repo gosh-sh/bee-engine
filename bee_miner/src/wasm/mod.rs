@@ -15,6 +15,7 @@ use serde_json::json;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsError;
 
+pub mod keys;
 pub mod miner;
 pub mod worker;
 
