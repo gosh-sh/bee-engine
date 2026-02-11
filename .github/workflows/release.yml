@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: "Publish release to npm with dist-tag latest"
+        required: true
+        default: true
+        type: boolean
+      dry_run:
+        description: "Run checks and build only (no tag, no release, no npm publish)"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: target
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - name: Ensure workflow runs from main
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Run this workflow from main only. Current ref: ${GITHUB_REF}"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Cargo check (workspace except verifier)
+        run: cargo check --workspace --exclude bee-verifier
+
+      - name: Cargo check (verifier)
+        run: cargo check -p bee-verifier
+
+      - name: Cargo check (miner wasm feature)
+        run: cargo check -p bee-miner --no-default-features --features wasm
+
+      - name: Cargo clippy (workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Cargo test (workspace native)
+        run: cargo test --workspace --exclude bee-verifier --exclude bee-sdk
+
+      - name: Cargo test (verifier lib)
+        run: cargo test -p bee-verifier --lib
+
+      - name: Cargo test (miner wasm feature on host)
+        run: cargo test -p bee-miner --no-default-features --features wasm --lib -- --skip core::keys::tests::gen_mining_keys_generates_keys_and_valid_deep_link
+
+      - name: Resolve SDK version and release tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -E '^version\s*=' bee_sdk/Cargo.toml | head -n1 | sed -E 's/version\s*=\s*"([^"]+)"/\1/')"
+          if [ -z "${VERSION}" ]; then
+            echo "Failed to resolve bee-sdk version from bee_sdk/Cargo.toml"
+            exit 1
+          fi
+
+          TAG="v${VERSION}"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+            exit 1
+          fi
+
+          echo "sdk_version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build wasm sdk package
+        run: |
+          cd bee_sdk
+          rm -rf pkg
+          wasm-pack build --target web --release
+
+      - name: Validate package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(node -p "require('./bee_sdk/pkg/package.json').version")"
+          if [ "${PKG_VERSION}" != "${{ steps.meta.outputs.sdk_version }}" ]; then
+            echo "Version mismatch: bee_sdk/Cargo.toml=${{ steps.meta.outputs.sdk_version }}, bee_sdk/pkg/package.json=${PKG_VERSION}"
+            exit 1
+          fi
+
+      - name: Validate npm token presence
+        if: ${{ inputs.publish_npm && !inputs.dry_run }}
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret is required for npm publish"
+            exit 1
+          fi
+
+      - name: Publish npm package (latest)
+        if: ${{ inputs.publish_npm && !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish bee_sdk/pkg --tag latest
+
+      - name: Create and push git tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.meta.outputs.tag }}"
+          git push origin "${{ steps.meta.outputs.tag }}"
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          prerelease: false
+          generate_release_notes: true
