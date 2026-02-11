@@ -11,27 +11,8 @@ concurrency:
 
 jobs:
   rust:
-    name: ${{ matrix.name }}
+    name: Rust Check, Clippy, Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: check-workspace
-            command: cargo check --workspace --exclude bee-verifier
-          - name: check-verifier
-            command: cargo check -p bee-verifier
-          - name: check-miner-wasm-feature
-            command: cargo check -p bee-miner --no-default-features --features wasm
-          - name: clippy-workspace
-            command: cargo clippy --workspace --all-targets -- -D warnings
-          - name: test-workspace-native
-            command: cargo test --workspace --exclude bee-verifier --exclude bee-sdk
-          - name: test-verifier-lib
-            command: cargo test -p bee-verifier --lib
-          - name: test-miner-wasm-feature
-            command: cargo test -p bee-miner --no-default-features --features wasm --lib
     env:
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: target
@@ -48,5 +29,23 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Run ${{ matrix.name }}
-        run: ${{ matrix.command }}
+      - name: Cargo check (workspace except verifier)
+        run: cargo check --workspace --exclude bee-verifier
+
+      - name: Cargo check (verifier)
+        run: cargo check -p bee-verifier
+
+      - name: Cargo check (miner wasm feature)
+        run: cargo check -p bee-miner --no-default-features --features wasm
+
+      - name: Cargo clippy (workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Cargo test (workspace native)
+        run: cargo test --workspace --exclude bee-verifier --exclude bee-sdk
+
+      - name: Cargo test (verifier lib)
+        run: cargo test -p bee-verifier --lib
+
+      - name: Cargo test (miner wasm feature on host)
+        run: cargo test -p bee-miner --no-default-features --features wasm --lib
