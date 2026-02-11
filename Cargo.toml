@@ -1,0 +1,17 @@
+
+[workspace]
+resolver = "3"
+members = ["bee_sdk", "bee_miner", "bee_shared", "bee_verifier"]
+
+[workspace.dependencies]
+blake3 = "1.8.2"
+borsh = { version = "1.6.0", features = ["derive"] }
+hex = "0.4.3"
+rs_merkle = { version = "1.5.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+panic = "abort"

@@ -1,0 +1,40 @@
+
+[package]
+edition = "2021"
+name = "bee-miner"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:serde-wasm-bindgen",
+    "dep:js-sys",
+    "ackinacki-kit/wasm",
+    "ackinacki-kit/contracts",
+]
+single-wasm = ["wasm"]
+
+[dependencies]
+ackinacki-kit = { git = "ssh://git@github.com/gosh-sh/ackinacki-kit.git", branch = "main", optional = true, default-features = false }
+blake3.workspace = true
+borsh.workspace = true
+futures = "0.3.31"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+hex.workspace = true
+js-sys = { optional = true, version = "0.3.83" }
+rs_merkle.workspace = true
+bee-shared = { path = "../bee_shared" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror = "2.0.17"
+wasm-bindgen = { optional = true, version = "0.2.106", features = ["serde-serialize"] }
+wasm-bindgen-futures = "0.4.56"
+serde-wasm-bindgen = { optional = true, version = "0.6.5" }
+web-sys = { version = "0.3.83", features = ["console"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.56"

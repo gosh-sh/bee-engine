@@ -1,0 +1,9 @@
+package docs:bee-engine@0.1.0;
+
+interface verifier-interface {
+    verify: func(kwargs: list<u8>) -> list<u8>;
+}
+
+world bee-engine {
+    export verifier-interface;
+}
