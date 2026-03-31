@@ -1,0 +1,17 @@
+when:
+  - event: push
+
+clone:
+  - name: git
+    image: woodpeckerci/plugin-git
+    settings:
+      depth: 0
+
+variables:
+  - &gitleaks_image "docker.gosh.sh/gitleaks"
+
+steps:
+  gitleaks:
+    image: *gitleaks_image
+    commands:
+      - gitleaks detect --config .gitleaks.toml --verbose --redact
