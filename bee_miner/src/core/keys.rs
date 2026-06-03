@@ -96,7 +96,7 @@ pub async fn ensure_mining_keys_propagated(
         ClientContext::new(params.client_config)
             .map_err(|e| format!("Create tvm client context ({e})"))?,
     );
-    let miner = Arc::new(Miner::new(context, &params.miner_address));
+    let miner = Arc::new(Miner::new_default(context, &params.miner_address));
     let app_id = params.app_id;
     let expected_owner_public = params.expected_owner_public;
 
@@ -136,7 +136,7 @@ async fn get_multifactor_address_by_wallet_name(
     tvm_client: Arc<ClientContext>,
     wallet_name: &str,
 ) -> Result<String, String> {
-    let root = MobileVerifiersRoot::new(tvm_client);
+    let root = MobileVerifiersRoot::new_default(tvm_client);
     let indexer = root
         .get_indexer(ParamsOfGetIndexer { name: wallet_name.to_string() })
         .await
@@ -168,7 +168,7 @@ fn resolve_mirror_for_multifactor(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("Invalid multifactor address format: {multifactor_address}"))?;
 
-    Mirror::new(tvm_client, tail).map_err(|e| format!("Mirror::new ({e})"))
+    Mirror::new_default(tvm_client, tail).map_err(|e| format!("Mirror::new ({e})"))
 }
 
 #[cfg(all(test, not(feature = "wasm")))]
