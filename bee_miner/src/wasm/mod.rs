@@ -1,17 +1,14 @@
 use ackinacki_kit::contracts::deserialize::deserialize_u128;
 use ackinacki_kit::contracts::deserialize::deserialize_u64;
-use ackinacki_kit::contracts::event::query_events;
+use ackinacki_kit::contracts::event::query_events_while;
 use ackinacki_kit::contracts::mvsystem;
 use ackinacki_kit::contracts::mvsystem::miner::events::DecodedMinerEvent;
 use ackinacki_kit::contracts::traits::AddressAccessor;
 use ackinacki_kit::contracts::traits::ContextAccessor;
 use ackinacki_kit::contracts::traits::FromEvent;
-use ackinacki_kit::tvm_client::net::OrderBy;
-use ackinacki_kit::tvm_client::net::SortDirection;
 use borsh::BorshDeserialize;
 use borsh::BorshSerialize;
 use serde::Deserialize;
-use serde_json::json;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsError;
 
@@ -72,14 +69,12 @@ async fn get_miner_events(
     contract: &mvsystem::miner::contract::Miner,
     after_dt: u64,
 ) -> Result<Vec<DecodedMinerEvent>, JsError> {
-    query_events(
+    query_events_while(
         contract.context().clone(),
-        Some(json!({
-            "src": {"eq": contract.address()},
-            "created_at": {"gt": after_dt},
-        })),
-        Some(vec![OrderBy { path: "created_at".to_string(), direction: SortDirection::ASC }]),
+        contract.address(),
+        contract.dapp_id(),
         Some(100),
+        |event| event.created_at > after_dt,
     )
     .await
     .map_err(|e| JsError::new(&format!("Query miner events ({e})")))?
