@@ -71,7 +71,7 @@ impl Miner {
         };
 
         // Read current complexity and seeds from contract
-        let contract = mvsystem::miner::contract::Miner::new(tvm_context.clone(), &address);
+        let contract = mvsystem::miner::contract::Miner::new_default(tvm_context.clone(), &address);
         let keys = KeyPair { public: public_key, secret: secret_key };
         let details = match contract.get_details().await {
             Ok(data) => data,
