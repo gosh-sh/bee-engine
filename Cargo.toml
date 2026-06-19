@@ -1,7 +1,37 @@
 
 [workspace]
 resolver = "3"
-members = ["bee_sdk", "bee_miner", "bee_shared", "bee_verifier", "bee_infra"]
+members = [
+    "bee_sdk",
+    "bee_miner",
+    "bee_shared",
+    "bee_verifier",
+    "bee_wallet",
+    "bee_connect",
+    "bee_infra",
+    "bee_crypto",
+    "bee_errors",
+]
+# `bee_sdk` is the wasm-aggregator (forces `single-wasm` on its deps, which
+# leaks wasm-only code into native builds via feature unification).
+# `bee_verifier` targets `wasm32-wasip2` and won't build under the host target.
+# Excluding both from default-members keeps `cargo run|build|test` from the
+# workspace root scoped to crates that compile cleanly natively.
+default-members = [
+    "bee_miner",
+    "bee_shared",
+    "bee_wallet",
+    "bee_connect",
+    "bee_infra",
+    "bee_crypto",
+    "bee_errors",
+]
+
+[workspace.package]
+version = "3.0.0"
+edition = "2024"
+license = "LicenseRef-Acki-Nacki-Node-License"
+license-file = "LICENSE.md"
 
 [workspace.dependencies]
 blake3 = "1.8.2"
@@ -15,3 +45,8 @@ serde_json = "1"
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
 panic = "abort"
+
+[profile.dev]
+# Line-tables-only: backtraces with file:line + symbol names, no locals.
+# Cuts debuginfo gen + link time noticeably on a halo2 + acki-nacki node tree.
+debug = 1

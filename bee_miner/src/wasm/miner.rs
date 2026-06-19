@@ -16,14 +16,13 @@ use ackinacki_kit::shared::traits::guarded::AsyncGuarded;
 use ackinacki_kit::tvm_client::abi::Signer;
 use ackinacki_kit::tvm_client::crypto::KeyPair;
 use ackinacki_kit::tvm_client::net;
-use ackinacki_kit::tvm_client::net::OrderBy;
-use ackinacki_kit::tvm_client::net::ParamsOfQueryCollection;
-use ackinacki_kit::tvm_client::net::SortDirection;
 use ackinacki_kit::tvm_client::ClientConfig;
 use ackinacki_kit::tvm_client::ClientContext;
 use futures::channel::mpsc::unbounded;
 use wasm_bindgen::prelude::*;
 
+use crate::graphql::block::BlocksBlockchain;
+use crate::graphql::GqlResponse;
 use crate::wasm::get_miner_events;
 use crate::wasm::worker;
 use crate::wasm::worker::MinerCommand;
@@ -300,29 +299,38 @@ impl Miner {
 
     #[wasm_bindgen(js_name = get_current_block)]
     pub async fn get_current_block(&self) -> Result<GraphqlBlockData, JsError> {
-        let result = net::query_collection(
+        let raw = net::query(
             self.contract.context().clone(),
-            ParamsOfQueryCollection {
-                collection: "blocks".to_string(),
-                filter: None,
-                result: "seq_no".to_string(),
-                order: Some(vec![OrderBy {
-                    path: "seq_no".to_string(),
-                    direction: SortDirection::DESC,
-                }]),
-                limit: Some(1),
+            net::ParamsOfQuery {
+                query: r#"
+                  query {
+                    blockchain {
+                      blocks(last: 1) {
+                        edges {
+                          node { seq_no }
+                        }
+                      }
+                    }
+                  }
+                "#
+                .to_string(),
+                variables: None,
             },
         )
         .await
         .map_err(|e| JsError::new(&format!("Query block seq_no ({e})")))?;
 
-        let value = result
-            .result
-            .first()
-            .ok_or_else(|| JsError::new("No results returned in block seq_no query"))?;
+        let parsed = serde_json::from_value::<GqlResponse<BlocksBlockchain>>(raw.result)
+            .map_err(|e| JsError::new(&format!("Deserialize blocks response ({e})")))?;
 
-        serde_json::from_value::<GraphqlBlockData>(value.clone())
-            .map_err(|e| JsError::new(&format!("Deserialize query result ({e})")))
+        parsed
+            .data
+            .blockchain
+            .blocks
+            .edges
+            .first()
+            .map(|edge| GraphqlBlockData { seq_no: edge.node.seq_no })
+            .ok_or_else(|| JsError::new("No blocks returned"))
     }
 }
 

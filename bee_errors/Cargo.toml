@@ -1,0 +1,24 @@
+[package]
+name = "bee-errors"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[features]
+default = ["ackinacki-kit/default", "ackinacki-kit/contracts"]
+wasm = ["ackinacki-kit/wasm", "ackinacki-kit/contracts"]
+single-wasm = ["wasm"]
+
+[dependencies]
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", default-features = false }
+base64 = "0.22.1"
+hex = { workspace = true }
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+reqwest = { version = "0.12", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `rt` makes `tokio::task::JoinError` (used by the `From` impl below) exist in
+# every build — incl. wasm — instead of relying on a downstream crate to unify
+# the feature in. `rt` compiles on wasm32 (current-thread runtime, no I/O).
+tokio = { version = "1", default-features = false, features = ["rt"] }
+url = "2"

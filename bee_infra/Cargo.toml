@@ -1,14 +1,20 @@
 [package]
 name = "bee-infra"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [features]
 default = []
-wasm = ["dep:gloo-timers"]
+wasm = ["dep:gloo-timers", "dep:js-sys"]
+tokio = ["dep:tokio"]
 
 [dependencies]
 gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
+js-sys = { version = "0.3.83", optional = true }
+parking_lot = "0.12"
+tokio = { version = "1.49.0", features = ["time"], optional = true }
 
 [dev-dependencies]
-futures = "0.3.31"
+tokio = { version = "1.49.0", features = ["rt", "macros", "time"] }
+wasm-bindgen-test = "0.3"

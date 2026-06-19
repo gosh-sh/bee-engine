@@ -10,8 +10,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    name: Rust Check, Clippy, Tests
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: target
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # nightly is only for `cargo fmt` (rustfmt.toml uses nightly-only options).
+      # stable is installed last, so it is the default for build/clippy.
+      - name: Setup Rust (nightly, rustfmt only)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # `gosh_tls_lib` is a private dependency (bee_wallet -> tls_connect); fetch
+      # it over https with a read-only token. `dodex-sdk` is a dev-dependency used
+      # only by the `dex_flows` integration tests (not run in CI) and pulls a heavy
+      # halo2 graph, so strip it to keep the resolve light. Every other git
+      # dependency is public.
+      - name: Configure git for private dep
+        env:
+          PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global url."https://oauth2:${PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          sed -i '/^dodex-sdk = /d' bee_wallet/Cargo.toml
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo +nightly fmt --all -- --check
+
+      # bee-sdk is the wasm aggregator (forces single-wasm on its deps, which leaks
+      # wasm-only code into native builds via feature unification); bee-verifier
+      # targets wasm32-wasip2. Both are covered on their own targets below.
+      - name: Cargo check (workspace, native)
+        run: cargo check --workspace --exclude bee-sdk --exclude bee-verifier
+
+      - name: Cargo check (verifier)
+        run: cargo check -p bee-verifier
+
+      - name: Cargo check (miner wasm feature)
+        run: cargo check -p bee-miner --no-default-features --features wasm
+
+      - name: Cargo check (sdk, wasm target)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check -p bee-sdk --target wasm32-unknown-unknown
+
+      - name: Clippy
+        run: cargo clippy --workspace --exclude bee-sdk --exclude bee-verifier --lib -- -D warnings -A clippy::result_large_err
+
+  test:
+    name: Test (unit)
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -23,29 +83,27 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+
+      - name: Configure git for private dep
+        env:
+          PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global url."https://oauth2:${PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          sed -i '/^dodex-sdk = /d' bee_wallet/Cargo.toml
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Cargo check (workspace except verifier)
-        run: cargo check --workspace --exclude bee-verifier
-
-      - name: Cargo check (verifier)
-        run: cargo check -p bee-verifier
-
-      - name: Cargo check (miner wasm feature)
-        run: cargo check -p bee-miner --no-default-features --features wasm
-
-      - name: Cargo clippy (workspace)
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Cargo test (workspace native)
-        run: cargo test --workspace --exclude bee-verifier --exclude bee-sdk
+      # `--lib` only: bee_wallet's integration tests hit shellnet / need local
+      # halo2 params, so they are run manually, not in CI.
+      - name: Cargo test (workspace libs)
+        run: cargo test --workspace --exclude bee-sdk --exclude bee-verifier --lib
 
       - name: Cargo test (verifier lib)
         run: cargo test -p bee-verifier --lib
 
+      # Skip the deep-link test: it drives wasm-bindgen futures that panic when
+      # the wasm feature is exercised on the host target (run it under wasm-pack
+      # instead). release.yml skips the same test.
       - name: Cargo test (miner wasm feature on host)
-        run: cargo test -p bee-miner --no-default-features --features wasm --lib
+        run: cargo test -p bee-miner --no-default-features --features wasm --lib -- --skip core::keys::tests::gen_mining_keys_generates_keys_and_valid_deep_link

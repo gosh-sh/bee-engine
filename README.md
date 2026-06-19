@@ -1,106 +1,105 @@
 # Bee-engine
 
-**TODO:** Add a description of the project’s purpose and high-level architecture.
+Rust workspace for blockchain mining, proof verification, wallet management, and cryptographic operations. Targets native Rust, browser WASM (`wasm32-unknown-unknown`), and WASI 2.0 (`wasm32-wasip2`).
 
+## Crates
 
+```
+bee_sdk        WASM aggregator — re-exports all crates into a single .wasm bundle
+bee_wallet     Wallet operations (send tokens, accumulator, connect, deploy)
+bee_crypto     Signing, encryption, mnemonics, hashing
+bee_miner      Mining: proof generation, merkle trees, WASM workers
+bee_connect    dApp ↔ wallet connect protocol, encrypted session management
+bee_verifier   Proof verifier (WASI component, separate target)
+bee_shared     Shared Borsh-serialized types
+bee_infra      Async sleep/poll utilities
+```
 
 ## Prerequisites
 
-Before building the project, ensure the following tools are installed:
+- **Rust** 1.86+
+- **LLVM 21+** (for WASM compilation of `blst` dependency)
+- **wasm-pack**: `cargo install wasm-pack`
+- **cargo-component**: `cargo install cargo-component`
 
-1. **LLVM** — version **21 or higher**
-2. **wasm-pack**
-   `cargo install wasm-pack`
-3. **cargo-component** `cargo install cargo-component`
-   
+## Build
 
-## Building engine-sdk (WASM)
-This step builds the SDK targeting browser-compatible WebAssembly.
-```bash
-cd engine_sdk
-rm -rf pkg && wasm-pack build --target web
-```
-
-Output artifacts are generated in the `pkg/` directory.
-
-## Building the Verifier (WASI)
-
-**TODO:** Verify the build commands below.
+Both WASM artifacts are built via the script — it remaps machine paths out of
+the binaries (`--remap-path-prefix`) and fails the build if a `/Users/...` or
+`/home/<user>/...` path survives into the artifact:
 
 ```bash
-cd engine
-
-# Generate WIT bindings
-cargo component bindings
-
-# Build the WASI-compatible WASM binary
-cargo +nightly build \
-  -Zbuild-std=std,panic_abort \
-  -Zbuild-std-features=panic_immediate_abort \
-  --target wasm32-wasip2 \
-  --release
+scripts/build_wasm.sh sdk        # bee_sdk → bee_sdk/pkg (wasm-pack, browser)
+scripts/build_wasm.sh verifier   # bee_verifier → wasm32-wasip2 (WASI component)
+scripts/build_wasm.sh            # both
 ```
 
-This produces a WASM component intended to run inside a WASI runtime.
+If `bee_verifier/wit` was updated, run `cargo component bindings` in
+`bee_verifier/` first (see `bee_verifier/README.md`).
 
-
-
-## Language Bindings
-
-**TODO:** Verify the build commands below.
-
-### JavaScript
+## Tests
 
 ```bash
-bun i
-bunx jco transpile \
-  engine/target/wasm32-wasip2/release/bee_engine_verifier.wasm \
-  -o ./bindings/js
+cargo test --workspace                          # all native tests
+cargo test -p bee-wallet                        # single crate
+cargo test -p bee-wallet -- test_name           # single test
+cargo test -p bee-wallet -- --test-threads=1    # bee_wallet integration tests (sequential)
+wasm-pack test --headless --chrome -p bee_miner # WASM tests (browser)
 ```
 
-This command generates JavaScript bindings from the WASI component.
+`bee_wallet` integration tests hit shellnet and share on-chain state (accumulator queues). Run with `--test-threads=1` to avoid flaky failures.
 
----
+## Lint & Format
+
+```bash
+cargo clippy --workspace
+cargo fmt --all -- --check
+```
+
+Formatting uses nightly rustfmt features (`imports_granularity = "Item"`, `group_imports = "StdExternalCrate"`).
+
+## Examples
+
+### miner-react
+
+React dApp demonstrating wallet connect, mining key setup, and wallet ownership verification.
+
+```bash
+cd bee_sdk && rm -rf pkg && wasm-pack build --target web
+cd ../examples/javascript/miner-react
+npm install
+npm run dev
+```
 
 ## Troubleshooting
 
-### Build errors
+### `blst` build errors
 
-If you encounter errors similar to the following when running the `wasm-pack build --target web` command:
 ```
 warning: blst@0.3.16: error: unable to create target:
 'No available targets are compatible with triple "wasm32-unknown-unknown"'
-error: failed to run custom build command for `blst v0.3.16`
 ```
 
-This usually indicates that your system `clang` is **too old** and does not support WebAssembly targets.
-
----
-
-### Fix: Upgrade LLVM (macOS)
-
-Install a newer LLVM version using Homebrew:
+System `clang` is too old. Install LLVM 21+:
 
 ```bash
 brew install llvm
 ```
 
-Then add the following lines to the end of your `~/.zshrc`:
+Add to `~/.zshrc`:
 
 ```bash
-# LLVM / clang configuration
 export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
 export LDFLAGS="-L/opt/homebrew/opt/llvm/lib"
 export CPPFLAGS="-I/opt/homebrew/opt/llvm/include"
 export CMAKE_PREFIX_PATH="/opt/homebrew/opt/llvm"
 ```
 
-Reload your shell configuration:
+Verify: `clang --version` reports LLVM 21+, `which clang` returns `/opt/homebrew/opt/llvm/bin/clang`.
 
-```bash
-source ~/.zshrc
-```
+## License
 
-Verify the installation:
- - `clang --version`  reports LLVM **21+** or higher 
- - `which clang` returns `/opt/homebrew/opt/llvm/bin/clang`
+Bee-engine is licensed under the **GNU Affero General Public License v3.0** —
+see [LICENSE.md](LICENSE.md). The AGPL terms apply only to Bee-engine itself;
+the Acki Nacki node software it interoperates with at runtime is licensed
+separately. See [NOTICE.md](NOTICE.md) for details.

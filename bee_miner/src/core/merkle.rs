@@ -81,6 +81,10 @@ impl MerkleProcessor {
 mod tests {
     use bee_shared::miner::leaf::Leaf;
     use rs_merkle::MerkleProof;
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     use super::*;
 
@@ -97,14 +101,16 @@ mod tests {
         leaf.compute()
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn empty_tree_has_empty_root_and_no_leaves() {
         let merkle = MerkleProcessor::new();
         assert!(merkle.get_merkle_root().is_empty());
         assert!(merkle.get_merkle_leaves().is_empty());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn leaves_are_blake3_of_input_and_root_is_stable_after_commit() {
         let mut merkle = MerkleProcessor::new();
         merkle.add_leaf(&create_computed_leaf(0));
@@ -119,7 +125,8 @@ mod tests {
         assert!(!root.is_empty(), "root must not be empty after commit");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn proof_verifies_for_window() {
         let mut m = MerkleProcessor::new();
         let total = 10usize;
@@ -141,7 +148,8 @@ mod tests {
         assert!(proof.verify(root, &indices, &selected, total));
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn clear_resets_tree_to_empty_state() {
         let mut merkle = MerkleProcessor::new();
         merkle.add_leaf(&create_computed_leaf(0));
@@ -154,7 +162,8 @@ mod tests {
         assert!(merkle.get_merkle_leaves().is_empty());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn order_of_leaves_affects_root() {
         let mut m1 = MerkleProcessor::new();
         m1.add_leaf(&create_computed_leaf(0));

@@ -1,0 +1,43 @@
+[package]
+edition.workspace = true
+name = "bee-crypto"
+version.workspace = true
+license.workspace = true
+
+[features]
+default = ["ackinacki-kit/default", "bee-errors/default"]
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:serde-wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:console_error_panic_hook",
+    "dep:js-sys",
+    "dep:web-sys",
+    "ackinacki-kit/wasm",
+    "bee-errors/wasm",
+]
+single-wasm = ["wasm"]
+
+[dependencies]
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", default-features = false }
+base64 = "0.22.1"
+bee-errors = { path = "../bee_errors", default-features = false }
+chacha20poly1305 = "0.10.1"
+console_error_panic_hook = { optional = true, version = "0.1.7" }
+ed25519-dalek = "2"
+getrandom = { version = "0.3", features = ["std"] }
+hex = { workspace = true }
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = { optional = true, version = "0.6.5" }
+sha2 = "0.10.9"
+subtle = "2.6.1"
+zeroize = { version = "1.8", features = ["derive"] }
+js-sys = { optional = true, version = "0.3.83" }
+web-sys = { optional = true, version = "0.3.83", features = ["Crypto", "SubtleCrypto", "CryptoKey"] }
+wasm-bindgen = { optional = true, version = "0.2.106", features = ["serde-serialize"] }
+wasm-bindgen-futures = { optional = true, version = "0.4.56" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

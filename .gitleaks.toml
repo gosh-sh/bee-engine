@@ -1,0 +1,71 @@
+title = "Gitleaks Config"
+
+[detect]
+redact = true
+
+# ======== Generic Rules ========
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|secret|token|auth)[=:]["']?[0-9a-zA-Z-_]{16,}["']?'''
+tags = ["key", "API"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[0-9A-Za-z]{36}'''
+tags = ["github", "token"]
+
+[[rules]]
+id = "gitlab-token"
+description = "GitLab Personal Access Token"
+regex = '''glpat-[0-9a-zA-Z\-\_]{20,}'''
+tags = ["gitlab", "token"]
+
+[[rules]]
+id = "slack-token"
+description = "Slack Token"
+regex = '''xox[baprs]-[0-9A-Za-z-]{10,48}'''
+tags = ["slack", "token"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''AKIA[0-9A-Z]{16}'''
+tags = ["AWS", "key"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws(.{0,20})?(secret|private)?(.{0,20})?(key|token)['"][0-9a-zA-Z\/+=]{40}['"]'''
+tags = ["AWS", "key"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key (PEM)"
+regex = '''-----BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "db-connection-string"
+description = "Database Connection String"
+regex = '''(?i)(?:postgres|mysql|mongodb|redis|sqlserver):\/\/([^ \n]+)'''
+tags = ["database", "credentials"]
+
+# ======== Allowlist ========
+
+[allowlist]
+description = "Ignore common non-sensitive locations"
+paths = [
+    '''.*tests?/.*''',
+    '''.*examples?/.*''',
+    '''target/.*''',
+    '''docs?/.*''',
+    '''\.git/.*''',
+    '''\.idea/.*''',
+    '''\.vscode/.*''',
+]
+regexes = [
+    '''(?i)dummy|example|sample|test|placeholder|mock''',
+]

@@ -1,10 +1,14 @@
 [package]
 name = "bee-sdk"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+bee-connect = { path = "../bee_connect", default-features = false, features=["single-wasm"] }
+bee-crypto = { path = "../bee_crypto", default-features = false, features=["single-wasm"] }
 bee-miner = { path = "../bee_miner", default-features = false, features=["single-wasm"] }
+bee-wallet = { path = "../bee_wallet", default-features = false, features=["single-wasm"] }

@@ -115,8 +115,8 @@ pub(crate) async fn run(
     loop {
         // Process incoming command and calculate hashes
         let now_ms = js_sys::Date::now() as u64;
-        match worker_receiver.try_recv() {
-            Ok(event) => match event {
+        match worker_receiver.try_next() {
+            Ok(Some(event)) => match event {
                 MinerCommand::QueueTap { x, y } => {
                     tap_core.compute(ParamsOfCompute { x, y, now_ms });
                     send_callback(
@@ -129,7 +129,7 @@ pub(crate) async fn run(
                 }
                 _ => {}
             },
-            Err(_) => {
+            Ok(None) | Err(_) => {
                 time_core.compute(ParamsOfCompute { x: 0, y: 0, now_ms });
             }
         }
