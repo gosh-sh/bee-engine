@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
-    name: Rust Check, Clippy, Tests
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       # nightly is only for `cargo fmt` (rustfmt.toml uses nightly-only options).
-      # stable is installed last, so it is the default for build/clippy/test.
+      # stable is installed last, so it is the default for build/clippy.
       - name: Setup Rust (nightly, rustfmt only)
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -47,7 +47,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
-      - name: Rustfmt
+      - name: Check formatting
         run: cargo +nightly fmt --all -- --check
 
       # bee-sdk is the wasm aggregator (forces single-wasm on its deps, which leaks
@@ -67,8 +67,32 @@ jobs:
           rustup target add wasm32-unknown-unknown
           cargo check -p bee-sdk --target wasm32-unknown-unknown
 
-      - name: Cargo clippy (workspace libs)
+      - name: Clippy
         run: cargo clippy --workspace --exclude bee-sdk --exclude bee-verifier --lib -- -D warnings -A clippy::result_large_err
+
+  test:
+    name: Test (unit)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: target
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure git for private dep
+        env:
+          PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global url."https://oauth2:${PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          sed -i '/^dodex-sdk = /d' bee_wallet/Cargo.toml
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
 
       # `--lib` only: bee_wallet's integration tests hit shellnet / need local
       # halo2 params, so they are run manually, not in CI.
@@ -79,7 +103,7 @@ jobs:
         run: cargo test -p bee-verifier --lib
 
       # Skip the deep-link test: it drives wasm-bindgen futures that panic when
-      # the wasm feature is exercised on the host target (run it under
-      # wasm-pack instead). release.yml skips the same test.
+      # the wasm feature is exercised on the host target (run it under wasm-pack
+      # instead). release.yml skips the same test.
       - name: Cargo test (miner wasm feature on host)
         run: cargo test -p bee-miner --no-default-features --features wasm --lib -- --skip core::keys::tests::gen_mining_keys_generates_keys_and_valid_deep_link
