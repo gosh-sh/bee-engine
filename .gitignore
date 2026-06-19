@@ -28,3 +28,6 @@ target
 
 Cargo.lock
 pkg/
+
+# halo2 SRS + prover cache (~0.5 GB) for the dex_flows tests — never commit
+bee_wallet/params/
