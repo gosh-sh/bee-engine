@@ -38,6 +38,14 @@ impl TryFrom<Vec<u8>> for ParamsOfVerifySession {
     type Error = String;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        const HEADER_LEN: usize = 72;
+        if bytes.len() < HEADER_LEN {
+            return Err(format!(
+                "Input too short: expected at least {HEADER_LEN} bytes, got {}",
+                bytes.len()
+            ));
+        }
+
         // Seed
         let seed = {
             let slice = &bytes[0..32];
@@ -93,7 +101,7 @@ impl TryFrom<Vec<u8>> for ParamsOfVerifySession {
         };
 
         // Rest bytes decode with borsh
-        let bytes_rest = &bytes[72..];
+        let bytes_rest = &bytes[HEADER_LEN..];
         let rest = borsh::from_slice::<PartialVerifySession>(bytes_rest)
             .map_err(|e| format!("Decode rest bytes ({e})"))?;
 
@@ -124,4 +132,26 @@ pub fn combine_bytes(args: &[&(impl BorshSerialize + Debug)]) -> Result<Vec<u8>,
     }
 
     Ok(combined)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_from_short_input_returns_error_not_panic() {
+        for len in [0usize, 1, 31, 32, 71] {
+            let bytes = vec![0u8; len];
+            let result = ParamsOfVerifySession::try_from(bytes);
+            assert!(result.is_err(), "expected Err for len={len}");
+        }
+    }
+
+    #[test]
+    fn try_from_header_ok_but_borsh_rest_fails_cleanly() {
+        // 72-byte header is well-formed; borsh tail is empty -> error, not panic.
+        let bytes = vec![0u8; 72];
+        let result = ParamsOfVerifySession::try_from(bytes);
+        assert!(result.is_err());
+    }
 }

@@ -55,7 +55,9 @@ impl ResultOfGenMiningKeys {
             .map_err(|e| format!("Serialize deep link payload ({e})"))?;
         let payload = URL_SAFE_NO_PAD.encode(payload);
 
-        Ok(format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/connect?payload={payload}"))
+        // Ok(format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/connect?
+        // payload={payload}"))
+        Ok(format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/v2/set-mining-keys?payload={payload}"))
     }
 }
 
@@ -98,7 +100,7 @@ pub async fn ensure_mining_keys_propagated(
     );
     let miner = Arc::new(Miner::new_default(context, &params.miner_address));
     let app_id = params.app_id;
-    let expected_owner_public = params.expected_owner_public;
+    let expected_owner_public = normalize_owner_public_for_compare(&params.expected_owner_public);
 
     bee_infra::poll_until(
         || {
@@ -110,7 +112,13 @@ pub async fn ensure_mining_keys_propagated(
                     .map_err(|e| format!("ensure_mining_keys_propagated: miner.get_details ({e})"))
             }
         },
-        move |details| details.owner_public.get(&app_id) == Some(&expected_owner_public),
+        move |details| {
+            details
+                .owner_public
+                .get(&app_id)
+                .map(|value| normalize_owner_public_for_compare(value) == expected_owner_public)
+                .unwrap_or(false)
+        },
         params.max_attempts,
         params.interval_ms,
     )
@@ -168,14 +176,22 @@ fn resolve_mirror_for_multifactor(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("Invalid multifactor address format: {multifactor_address}"))?;
 
-    Mirror::new_default(tvm_client, tail).map_err(|e| format!("Mirror::new ({e})"))
+    Mirror::new_default(tvm_client, tail).map_err(|e| format!("Mirror::new_default ({e})"))
 }
 
-#[cfg(all(test, not(feature = "wasm")))]
+fn normalize_owner_public_for_compare(value: &str) -> String {
+    let stripped = value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")).unwrap_or(value);
+    format!("0x{}", stripped.to_ascii_lowercase())
+}
+
+#[cfg(test)]
 mod tests {
-    use ackinacki_kit::tvm_client::ClientConfig;
     use base64::Engine;
     use serde::Deserialize;
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test;
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     use super::DEEPLINK_RESOLVER_URL;
     use super::URL_SAFE_NO_PAD;
@@ -188,14 +204,26 @@ mod tests {
         app_id: String,
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn gen_mining_keys_generates_keys_and_valid_deep_link() {
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn normalize_owner_public_for_compare_accepts_prefixed_and_raw() {
+        let raw = "AaBb";
+        let with_prefix = "0xAaBb";
+        let upper_prefix = "0XAABB";
+
+        assert_eq!(super::normalize_owner_public_for_compare(raw), "0xaabb");
+        assert_eq!(super::normalize_owner_public_for_compare(with_prefix), "0xaabb");
+        assert_eq!(super::normalize_owner_public_for_compare(upper_prefix), "0xaabb");
+    }
+
+    async fn gen_mining_keys_generates_keys_and_valid_deep_link_impl() {
         let result = super::gen_mining_keys(APP_ID).await.expect("keys should be generated");
 
         assert!(!result.keys.public.is_empty(), "public key should not be empty");
         assert!(!result.keys.secret.is_empty(), "secret key should not be empty");
 
-        let prefix = format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/connect?payload=");
+        let prefix =
+            format!("{DEEPLINK_RESOLVER_URL}/deeplinks/wallet/v2/set-mining-keys?payload=");
         let payload =
             result.deep_link.strip_prefix(&prefix).expect("deep link should have payload query");
 
@@ -208,37 +236,22 @@ mod tests {
         assert_eq!(decoded_payload.app_id, APP_ID);
     }
 
+    // NOTE: the end-to-end test for `get_miner_address_by_wallet_name` lives in
+    // `bee_wallet` (tests/integration.rs::test_get_miner_address_by_wallet_name).
+    // It deploys a fresh wallet and resolves it, so it never rots on a shellnet
+    // redeploy — unlike the old test here, which pinned `test_t1_*` and broke
+    // every wipe. It can't live in `bee_miner`: deploying a wallet needs
+    // `bee_wallet`, and `bee_miner` doesn't depend on it.
+
+    #[cfg(not(target_arch = "wasm32"))]
     #[tokio::test(flavor = "current_thread")]
-    async fn get_miner_address_by_wallet_name_for_known_wallets() {
-        let candidates = ["demo_wallet"];
-        let mut last_error = String::new();
+    async fn gen_mining_keys_generates_keys_and_valid_deep_link() {
+        gen_mining_keys_generates_keys_and_valid_deep_link_impl().await;
+    }
 
-        for wallet_name in candidates {
-            let mut cfg = ClientConfig::default();
-            cfg.network.endpoints = Some(vec!["mainnet.ackinacki.org".to_string()]);
-
-            match super::get_miner_address_by_wallet_name(
-                super::ParamsOfGetMinerAddressByWalletName {
-                    client_config: cfg,
-                    wallet_name: wallet_name.to_string(),
-                },
-            )
-            .await
-            {
-                Ok(address) => {
-                    assert!(!address.is_empty(), "resolved miner address should not be empty");
-                    assert!(
-                        address.contains(':'),
-                        "resolved miner address should look like TVM address, got: {address}"
-                    );
-                    return;
-                }
-                Err(e) => {
-                    last_error = format!("wallet `{wallet_name}`: {e}");
-                }
-            }
-        }
-
-        panic!("Failed to resolve miner address for demo_wallet or wapp_t_1: {last_error}");
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    async fn gen_mining_keys_generates_keys_and_valid_deep_link() {
+        gen_mining_keys_generates_keys_and_valid_deep_link_impl().await;
     }
 }

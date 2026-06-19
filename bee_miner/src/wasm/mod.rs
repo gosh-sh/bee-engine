@@ -1,6 +1,6 @@
 use ackinacki_kit::contracts::deserialize::deserialize_u128;
 use ackinacki_kit::contracts::deserialize::deserialize_u64;
-use ackinacki_kit::contracts::event::query_events_while;
+use ackinacki_kit::contracts::event::query_events;
 use ackinacki_kit::contracts::mvsystem;
 use ackinacki_kit::contracts::mvsystem::miner::events::DecodedMinerEvent;
 use ackinacki_kit::contracts::traits::AddressAccessor;
@@ -69,18 +69,13 @@ async fn get_miner_events(
     contract: &mvsystem::miner::contract::Miner,
     after_dt: u64,
 ) -> Result<Vec<DecodedMinerEvent>, JsError> {
-    query_events_while(
-        contract.context().clone(),
-        contract.address(),
-        contract.dapp_id(),
-        Some(100),
-        |event| event.created_at > after_dt,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Query miner events ({e})")))?
-    .iter()
-    .map(|event| {
-        DecodedMinerEvent::from_event(event, contract).map_err(|e| JsError::new(&e.to_string()))
-    })
-    .collect::<Result<Vec<DecodedMinerEvent>, JsError>>()
+    query_events(contract.context().clone(), contract.address(), contract.dapp_id(), Some(100))
+        .await
+        .map_err(|e| JsError::new(&format!("Query miner events ({e})")))?
+        .iter()
+        .filter(|event| event.created_at > after_dt)
+        .map(|event| {
+            DecodedMinerEvent::from_event(event, contract).map_err(|e| JsError::new(&e.to_string()))
+        })
+        .collect::<Result<Vec<DecodedMinerEvent>, JsError>>()
 }

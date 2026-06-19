@@ -136,12 +136,12 @@ mod tests {
     use crate::bindings::exports::docs::bee_engine::verifier_interface::Guest;
     use crate::VerifierGuest;
 
-    trait HexDecodeExt {
-        fn decode_hex(&self) -> Vec<u8>;
+    trait FromHex {
+        fn from_hex(&self) -> Vec<u8>;
     }
 
-    impl HexDecodeExt for str {
-        fn decode_hex(&self) -> Vec<u8> {
+    impl FromHex for str {
+        fn from_hex(&self) -> Vec<u8> {
             hex::decode(self).unwrap()
         }
     }
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn test_hash() {
         let computed_leaf = ComputedLeaf {
-            hash: "0011ffde34458bb9369bd0336a3f437263ffe3edf4a0bdcb5e89ae9a44736275".decode_hex(),
+            hash: "0011ffde34458bb9369bd0336a3f437263ffe3edf4a0bdcb5e89ae9a44736275".from_hex(),
             nonce: 2249,
             index: 10,
             seed: "0x0000".to_string(),

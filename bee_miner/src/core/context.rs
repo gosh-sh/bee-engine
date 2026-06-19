@@ -70,6 +70,7 @@ impl MiningCore {
                 return None;
             }
         }
+        self.last_now_ms = Some(params.now_ms);
 
         let job_index = self.completed.len() as u128;
         let computed_leaf = self.hash_processor.calc_hash_blake(ParamsOfCalcHash {
@@ -117,6 +118,7 @@ impl MiningCore {
         self.completed.clear();
         self.committed = false;
         self.ends_at_ms = None;
+        self.last_now_ms = None;
     }
 
     fn deadline_reached_ms(&self, now_ms: u64) -> bool {
@@ -126,13 +128,19 @@ impl MiningCore {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test;
+
     use super::*;
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
     fn add_tap(core: &mut MiningCore, x: u32, y: u32, now_ms: u64) -> Option<ComputedLeaf> {
         core.compute(ParamsOfCompute { x, y, now_ms })
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn sets_deadline_on_first_job_and_honors_it() {
         let mut core = MiningCore::new("s".to_string(), 15_000, 12);
 
@@ -153,7 +161,8 @@ mod tests {
         assert!(out.is_none());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn after_commit_no_more_jobs() {
         let mut core = MiningCore::new("seed".to_string(), 5_000, 12);
         let _ = add_tap(&mut core, 1, 1, 0);
@@ -167,7 +176,8 @@ mod tests {
         assert!(out.is_none(), "no jobs after commit");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn completed_slice_returns_elements_in_order() {
         let mut core = MiningCore::new("s".to_string(), 5_000, 12);
         let _ = add_tap(&mut core, 1, 1, 0);
@@ -180,7 +190,8 @@ mod tests {
         assert_eq!(v[1].index, 2);
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn reset_clears_state_and_restarts_session() {
         let mut core = MiningCore::new("seed0".to_string(), 10_000, 12);
 
@@ -198,7 +209,8 @@ mod tests {
         assert!(core.ends_at_ms.is_some());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn accepts_last_ms_before_deadline_and_rejects_at_deadline() {
         let mut core = MiningCore::new("s".to_string(), 2_000, 12);
         let start = 10_000;
@@ -211,7 +223,8 @@ mod tests {
         assert!(add_tap(&mut core, 1, 1, end).is_none());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn get_merkle_is_idempotent_and_returns_non_empty_root_after_work() {
         let mut core = MiningCore::new("seed".to_string(), 5_000, 12);
         let _ = add_tap(&mut core, 1, 1, 0);
@@ -224,7 +237,8 @@ mod tests {
         assert!(!root1.is_empty(), "merkle root should not be empty after some work");
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn get_proof_bounds() {
         let mut core = MiningCore::new("s".to_string(), 5_000, 12);
         let _ = add_tap(&mut core, 1, 1, 0);
@@ -245,7 +259,27 @@ mod tests {
         assert!(bad.is_err());
     }
 
-    #[test]
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+    fn rejects_backwards_timestamps_and_reset_clears_last_now_ms() {
+        let mut core = MiningCore::new("s".to_string(), 10_000, 12);
+        assert!(add_tap(&mut core, 1, 1, 1_000).is_some());
+        assert!(add_tap(&mut core, 1, 1, 2_000).is_some());
+
+        // backwards timestamp is rejected
+        assert!(add_tap(&mut core, 1, 1, 1_500).is_none());
+        // equal timestamp is accepted
+        assert!(add_tap(&mut core, 1, 1, 2_000).is_some());
+        // forward timestamp is accepted
+        assert!(add_tap(&mut core, 1, 1, 3_000).is_some());
+
+        // reset clears the watermark
+        core.reset();
+        assert!(add_tap(&mut core, 1, 1, 500).is_some());
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
     fn merkle_before_any_work_is_empty_but_commits() {
         let mut core = MiningCore::new("s".to_string(), 5_000, 12);
         let _ = core.get_merkle();

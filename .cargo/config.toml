@@ -1,2 +1,21 @@
+[build]
+# Required by `dark_dex_halo2_private_witness_export_lib` → acki-nacki
+# `telemetry_utils` (calls `RuntimeMetrics::spawned_tasks_count`, gated
+# behind tokio's unstable cfg). Without this flag, the live witness
+# export crate fails to build.
+rustflags = ["--cfg", "tokio_unstable"]
+
+# NOTE: do NOT switch the linker to ld64.lld here. The dep-graph pulls in
+# two tvm-sdk versions (via ackinacki-kit and via acki-nacki/node) whose
+# `tvm_client` crates both export the same `extern "C"` symbols
+# (`tc_create_context`, `tc_request_*`, ...). Apple's system ld64 silently
+# picks one; ld64.lld errors out on duplicate symbols. Stick with ld64.
+
+# NOTE: `rustc-wrapper = "sccache"` is intentionally not configured here.
+# sccache is a personal/CI-side speedup; baking it into the project config
+# breaks builds for contributors who don't have sccache installed (cargo
+# fails if the wrapper binary is missing). Put it in your own
+# `~/.cargo/config.toml` instead.
+
 [net]
 git-fetch-with-cli = true

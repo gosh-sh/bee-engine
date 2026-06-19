@@ -1,27 +1,26 @@
 
 [package]
-edition = "2021"
+edition.workspace = true
 name = "bee-miner"
-version = "0.1.0"
+version.workspace = true
+license.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["ackinacki-kit/default", "ackinacki-kit/contracts"]
+default = ["ackinacki-kit/default"]
 wasm = [
-    "dep:ackinacki-kit",
     "dep:wasm-bindgen",
     "dep:serde-wasm-bindgen",
     "dep:js-sys",
     "bee-infra/wasm",
     "ackinacki-kit/wasm",
-    "ackinacki-kit/contracts",
 ]
 single-wasm = ["wasm"]
 
 [dependencies]
-ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v2.0.0", optional = true, default-features = false }
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", default-features = false, features = ["contracts"] }
 base64 = "0.22.1"
 blake3.workspace = true
 borsh.workspace = true
@@ -31,7 +30,7 @@ hex.workspace = true
 js-sys = { optional = true, version = "0.3.83" }
 rs_merkle.workspace = true
 bee-shared = { path = "../bee_shared" }
-bee-infra = { path = "../bee_infra", default-features = false }
+bee-infra = { path = "../bee_infra", default-features = false, features = ["tokio"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror = "2.0.17"
@@ -41,5 +40,5 @@ serde-wasm-bindgen = { optional = true, version = "0.6.5" }
 web-sys = { version = "0.3.83", features = ["console"] }
 
 [dev-dependencies]
+tokio = { version = "1.49.0", features = ["rt", "macros"] }
 wasm-bindgen-test = "0.3.56"
-tokio = { version = "1", features = ["macros", "rt"] }

@@ -1,0 +1,108 @@
+
+[package]
+edition.workspace = true
+name = "bee-wallet"
+version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "faucet"
+path = "src/bin/faucet.rs"
+required-features = ["default"]
+
+[[bin]]
+name = "wallet_info"
+path = "src/bin/wallet_info.rs"
+required-features = ["default"]
+
+[features]
+default = ["ackinacki-kit/default", "ackinacki-kit/contracts", "tokio", "bee-crypto/default", "bee-errors/default"]
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:serde-wasm-bindgen",
+    "dep:js-sys",
+    "dep:web-sys",
+    "console_error_panic_hook",
+    "dep:wasm-bindgen-futures",
+    "dep:gloo-timers",
+    "bee-connect/wasm",
+    "bee-crypto/wasm",
+    "bee-infra/wasm",
+    "ackinacki-kit/wasm",
+    "ackinacki-kit/contracts",
+    "bee-errors/wasm",
+    "tokio",
+]
+single-wasm = ["wasm"]
+
+[dependencies]
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", optional = true, default-features = false }
+base64 = "0.22.1"
+bech32 = "0.9.1"
+bee-errors = { path = "../bee_errors", default-features = false }
+bee-infra = { path = "../bee_infra", default-features = false, features = ["tokio"] }
+bee-connect = { path = "../bee_connect", default-features = false }
+bee-crypto = { path = "../bee_crypto", default-features = false }
+chacha20poly1305 = "0.10.1"
+console_error_panic_hook = { optional = true, version = "0.1.7" }
+ed25519-dalek = "2"
+futures = "0.3"
+getrandom = { default-features = false, features = [
+    "wasm_js",
+], version = "0.3.4" }
+gloo-timers = { version = "0.3.0", features = ['futures'], optional = true }
+gosh_tls_lib = { git = "ssh://git@github.com/gosh-sh/gosh_tls_lib.git", tag = "6.5" }
+hex = "0.4.3"
+hkdf = "0.12.4"
+itertools = "0.14.0"
+js-sys = { optional = true, version = "0.3.83" }
+num-bigint = { version = "0.4.6", features = ["serde"] }
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+rand = "0.9.2"
+regex = "1"
+reqwest = { version = "0.12.25", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = { optional = true, version = "0.6.5" }
+serde_json = "1"
+serde_with = "3.15.0"
+sha2 = "0.10.9"
+subtle = "2.6.1"
+thiserror = "2"
+url = "2.5.7"
+wasm-bindgen = { optional = true, version = "0.2.106", features = [
+    "serde-serialize",
+] }
+wasm-bindgen-futures = { optional = true, version = "0.4.56" }
+web-sys = { optional = true, version = "0.3.83", features = ["console"] }
+tokio = { optional = true, version = "1.49.0", features = ["rt", "macros"] }
+
+# DEX contract wrappers (RootPn, PrivateNote, …) moved out of kit at v3.0.0 into
+# dodex-backend's `dodex-contracts`, built on kit's trait surface via the new
+# `KitModule::External` hook. Native-only: voucher generation isn't exposed on
+# wasm, so this keeps the dodex graph out of the wasm build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dodex-contracts = { git = "https://github.com/gosh-sh/dodex-backend.git", branch = "feature/NODE-3625-move-dex-contract-wrappers-from-kit", package = "dodex-contracts" }
+
+[dev-dependencies]
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", features = ["default", "contracts"] }
+base64 = "0.22.1"
+bee-connect = { path = "../bee_connect" }
+bee-crypto = { path = "../bee_crypto" }
+# For test_get_miner_address_by_wallet_name: exercises bee_miner's name→miner
+# resolver against a wallet this suite freshly deploys (bee_miner can't deploy).
+bee-miner = { path = "../bee_miner" }
+serde_json = "1"
+tokio = { version = "1.49.0", features = ["rt", "macros", "time"] }
+
+# DEX façade (`Dex`, halo2 prover, `proof` helpers) for the wallet-coupled
+# full-flow tests under `tests/dex_flows/` — the two multifactor flows that
+# exercise bee-wallet + DEX together. Native-only: pulls the heavy halo2 graph.
+# Raw contract wrappers come from `dodex-contracts` (a regular dep above).
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+dodex-sdk = { git = "https://github.com/gosh-sh/dodex-backend.git", branch = "feature/NODE-3625-move-dex-contract-wrappers-from-kit" }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3.56"

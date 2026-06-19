@@ -96,6 +96,12 @@ impl ComputedLeaf {
         if self.seed != seed.as_ref() || self.complexity != complexity {
             return false;
         }
+        // A threshold for complexity >= 128 would shift u128 past its width
+        // (panic in debug, masked-shift in release). No hash can satisfy such
+        // a constraint, so reject up front.
+        if self.complexity >= 128 {
+            return false;
+        }
 
         let hash_valid = {
             let leaf = Leaf::from(self.clone());
@@ -112,8 +118,57 @@ impl ComputedLeaf {
     }
 
     pub fn hash_num(&self) -> u128 {
+        if self.hash.len() < 16 {
+            // Malformed hash cannot satisfy any difficulty threshold; return the
+            // sentinel that compares strictly above every valid threshold.
+            return u128::MAX;
+        }
         let mut hi16 = [0u8; 16];
         hi16.copy_from_slice(&self.hash[0..16]);
         u128::from_be_bytes(hi16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf_with(complexity: u32, hash: Vec<u8>) -> ComputedLeaf {
+        ComputedLeaf {
+            index: 0,
+            nonce: 0,
+            seed: "seed".to_string(),
+            x: 0,
+            y: 0,
+            timestamp: 0,
+            complexity,
+            hash,
+        }
+    }
+
+    #[test]
+    fn verify_rejects_complexity_at_or_above_128_without_panic() {
+        // A complexity that would shift past u128 width must not panic.
+        for c in [128u32, 129, 200, u32::MAX] {
+            let leaf = leaf_with(c, vec![0u8; 32]);
+            assert!(!leaf.verify("seed", c), "complexity={c} must be rejected");
+        }
+    }
+
+    #[test]
+    fn hash_num_safe_on_short_hash() {
+        // Short hash must not panic and must not satisfy any real threshold.
+        let leaf = leaf_with(10, vec![0u8; 5]);
+        assert_eq!(leaf.hash_num(), u128::MAX);
+        assert!(!leaf.verify("seed", 10));
+    }
+
+    #[test]
+    fn hash_num_reads_first_16_bytes_big_endian() {
+        let mut hash = vec![0u8; 32];
+        hash[0] = 0x01;
+        hash[15] = 0xFF;
+        let leaf = leaf_with(10, hash);
+        assert_eq!(leaf.hash_num(), (1u128 << 120) | 0xFF);
     }
 }
