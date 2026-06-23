@@ -3,13 +3,8 @@ name: Release RC
 on:
   workflow_dispatch:
     inputs:
-      publish_npm:
-        description: "Publish RC to npm with dist-tag next"
-        required: true
-        default: true
-        type: boolean
       dry_run:
-        description: "Run checks and build only (no tag, no release, no npm publish)"
+        description: "Run checks and build only (no tag, no GitHub prerelease)"
         required: true
         default: false
         type: boolean
@@ -60,7 +55,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Cache Rust
@@ -135,23 +130,9 @@ jobs:
             exit 1
           fi
 
-      - name: Validate npm token presence
-        if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        shell: bash
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is required for npm publish"
-            exit 1
-          fi
-
-      - name: Publish npm package (next)
-        if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish ./bee_sdk/pkg --tag next --access public
-
+      # RC does NOT publish to npm (avoids the bare-version collision with the
+      # stable release on dist-tag latest). It only builds, checks, tags, and
+      # cuts a GitHub prerelease for validation.
       - name: Create and push git tag
         if: ${{ !inputs.dry_run }}
         run: |

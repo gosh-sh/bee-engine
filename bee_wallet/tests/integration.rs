@@ -4297,3 +4297,139 @@ async fn test_generate_voucher_gas() {
 // `tests/dex_flows/flows.rs::test_production_flow_voucher_deploy_pn_and_stake`.
 // It exercises the same wallet.generate_voucher entry point but binds the
 // voucher to a real halo2 proof, which is now mandatory on RootPN.
+
+// --- deploy flat Multisig via default giver (shellnet, fully client-side) ---
+
+const SHELLNET_ENDPOINTS: &[&str] = &["shellnet.ackinacki.org"];
+
+fn shellnet_endpoints() -> Vec<String> {
+    SHELLNET_ENDPOINTS.iter().map(|s| s.to_string()).collect()
+}
+
+/// End-to-end: generate owner keys, fund the future address from the giver,
+/// deploy the Multisig, confirm Active on-chain. Then re-run with the SAME keys
+/// and assert idempotency (no second deploy).
+#[tokio::test]
+async fn test_deploy_multisig_via_giver() {
+    let result = bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
+        endpoints: shellnet_endpoints(),
+        keys: None,
+        owners_pubkey: None,
+        req_confirms: None,
+        req_confirms_data: None,
+        constructor_value: None,
+        giver_value: None,
+        giver_ecc: None,
+        wait_for_active: Some(true),
+    })
+    .await
+    .expect("deploy_multisig_via_giver failed");
+
+    println!(
+        "deployed multisig: address={} public={} already_deployed={} tx={:?}",
+        result.address, result.public, result.already_deployed, result.deploy_tx
+    );
+
+    // Canonical dApp-scoped address: `<id>::<id>` with both halves equal 64-hex.
+    let (left, right) =
+        result.address.split_once("::").expect("address must be <id>::<id>");
+    assert_eq!(left, right, "both halves must be equal, got {}", result.address);
+    assert_eq!(left.len(), 64, "id half must be 64-hex, got {}", result.address);
+    assert!(
+        left.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
+        "id must be lowercase hex, got {}",
+        result.address
+    );
+    assert_eq!(result.public.len(), 64, "owner public must be 64-hex");
+    assert_eq!(result.secret.len(), 64, "owner secret must be 64-hex");
+    assert!(!result.already_deployed, "fresh keys: should have deployed");
+    assert!(result.deploy_tx.is_some(), "fresh deploy should report a tx id");
+
+    // Confirm the account is actually Active on-chain (reconstruct raw `0:<id>`).
+    let ctx = create_tvm_context();
+    let raw_address = format!("0:{left}");
+    let mut account =
+        ackinacki_kit::contracts::account::Account::new(ctx, &raw_address, left.to_string());
+    account.fetch().await.expect("fetch deployed multisig");
+    assert_eq!(
+        account.acc_type,
+        ackinacki_kit::contracts::account::AccountStatus::Active,
+        "multisig should be Active after deploy"
+    );
+
+    // Idempotency: same keys -> same address, no second deploy, no giver spend.
+    let keys = KeyPair { public: result.public.clone(), secret: result.secret.clone() };
+    let again =
+        bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
+            endpoints: shellnet_endpoints(),
+            keys: Some(keys),
+            owners_pubkey: None,
+            req_confirms: None,
+            req_confirms_data: None,
+            constructor_value: None,
+            giver_value: None,
+            giver_ecc: None,
+            wait_for_active: Some(true),
+        })
+        .await
+        .expect("idempotent re-deploy failed");
+
+    assert_eq!(again.address, result.address, "same keys must yield same address");
+    assert!(again.already_deployed, "second run must detect existing Active account");
+    assert!(again.deploy_tx.is_none(), "idempotent run must not deploy again");
+
+    // Generic ECC balance read works on the flat multisig (canonical address in).
+    // Note: giver SHELL lands in the account's base `balance`, so ECC[2] reads
+    // back as a registered-but-zero slot here; this binding returns `account.ecc`
+    // verbatim by design.
+    let balances =
+        bee_wallet::multisig_balances(shellnet_endpoints(), result.address.clone())
+            .await
+            .expect("multisig_balances failed");
+    println!("multisig_balances = {balances:?}");
+    assert!(
+        balances.contains_key(&2),
+        "SHELL (ECC[2]) slot should be present, got {balances:?}"
+    );
+}
+
+/// Brick 1 in isolation: address derivation is deterministic for fixed inputs
+/// and key-dependent. No giver / no deploy — pure encode.
+#[tokio::test]
+async fn test_compute_multisig_address_deterministic() {
+    let ctx = create_tvm_context();
+    let keys = ackinacki_kit::tvm_client::crypto::generate_random_sign_keys(ctx.clone())
+        .expect("generate keys");
+
+    let spec = bee_wallet::MultisigDeploySpec {
+        keys: keys.clone(),
+        owners_pubkey: vec![format!("0x{}", keys.public)],
+        req_confirms: 1,
+        req_confirms_data: 1,
+        constructor_value: "0".to_string(),
+    };
+
+    let a = bee_wallet::compute_multisig_address(ctx.clone(), &spec)
+        .await
+        .expect("compute address a");
+    let b = bee_wallet::compute_multisig_address(ctx.clone(), &spec)
+        .await
+        .expect("compute address b");
+    assert_eq!(a, b, "address must be deterministic for fixed spec");
+    assert!(a.starts_with("0:"));
+
+    // Different owner keys -> different address.
+    let other_keys = ackinacki_kit::tvm_client::crypto::generate_random_sign_keys(ctx.clone())
+        .expect("generate other keys");
+    let other_spec = bee_wallet::MultisigDeploySpec {
+        keys: other_keys.clone(),
+        owners_pubkey: vec![format!("0x{}", other_keys.public)],
+        req_confirms: 1,
+        req_confirms_data: 1,
+        constructor_value: "0".to_string(),
+    };
+    let c = bee_wallet::compute_multisig_address(ctx, &other_spec)
+        .await
+        .expect("compute address c");
+    assert_ne!(a, c, "different keys must yield a different address");
+}

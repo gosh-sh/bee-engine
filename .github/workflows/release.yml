@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     env:
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: target
@@ -60,8 +61,13 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 24's bundled npm
+      # may be older, so upgrade explicitly.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -128,21 +134,10 @@ jobs:
             exit 1
           fi
 
-      - name: Validate npm token presence
-        if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        shell: bash
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is required for npm publish"
-            exit 1
-          fi
-
+      # Auth via OIDC trusted publishing (configured on the npm package for this
+      # repo + workflow). No NPM_TOKEN needed; provenance is attached automatically.
       - name: Publish npm package (latest)
         if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish ./bee_sdk/pkg --tag latest --access public
 
       - name: Create and push git tag
