@@ -8,9 +8,10 @@
 //! 2. giver top-up — fund the future address from the default shellnet giver.
 //!    **Shellnet only** (the giver account `0:1111…` exists nowhere else); kept
 //!    private, reachable solely through [`deploy_multisig_via_giver`].
-//! 3. [`deploy_multisig`] — deploy a Multisig whose address is *already funded*.
-//!    Network-agnostic: works on any network as long as the address has a
-//!    balance to pay for the deploy. Idempotent (returns early if Active).
+//! 3. [`deploy_multisig`] — deploy a Multisig whose address is *already
+//!    funded*. Network-agnostic: works on any network as long as the address
+//!    has a balance to pay for the deploy. Idempotent (returns early if
+//!    Active).
 //!
 //! [`deploy_multisig_via_giver`] wires 1 → 2 → 3 for a fully client-side
 //! shellnet deploy. The ABI/TVC are vendored from the kit (`assets/multisig/`)
@@ -106,14 +107,15 @@ impl MultisigDeploySpec {
     }
 }
 
-/// A fresh account is the root of its own dApp, so its `dapp_id` equals its bare
-/// account-id (lookups are dApp-scoped on `>= 1.0.0` servers).
+/// A fresh account is the root of its own dApp, so its `dapp_id` equals its
+/// bare account-id (lookups are dApp-scoped on `>= 1.0.0` servers).
 fn dapp_id_of(address: &str) -> String {
     address.trim_start_matches("0:").to_string()
 }
 
-/// Canonical dApp-scoped address for a self-rooted account (dapp_id == account):
-/// `<id>::<id>`. Only for values returned to callers; on-chain ops use raw `0:<hex>`.
+/// Canonical dApp-scoped address for a self-rooted account (dapp_id ==
+/// account): `<id>::<id>`. Only for values returned to callers; on-chain ops
+/// use raw `0:<hex>`.
 fn canonical_address(raw: &str) -> String {
     let id = raw.trim_start_matches("0:");
     format!("{id}::{id}")
@@ -173,8 +175,7 @@ pub async fn deploy_multisig(
     )
     .await?;
 
-    let deploy_tx =
-        result.transaction.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let deploy_tx = result.transaction.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     if wait_for_active {
         account
@@ -204,7 +205,8 @@ pub struct ParamsOfDeployMultisigViaGiver {
     /// Constructor `value` arg (`uint64` as string). Default `"0"`.
     #[serde(default)]
     pub constructor_value: Option<String>,
-    /// Native top-up of the future address (u64 as string). Default `"10000000000"`.
+    /// Native top-up of the future address (u64 as string). Default
+    /// `"10000000000"`.
     #[serde(default)]
     pub giver_value: Option<String>,
     /// ECC top-up `{ currency_id: amount(u64-string) }`. Default `{}`.

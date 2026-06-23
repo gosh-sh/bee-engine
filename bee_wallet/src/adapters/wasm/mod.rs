@@ -797,10 +797,9 @@ pub async fn multisig_balances(
         serde_wasm_bindgen::from_value(params_val)
             .map_err(|e| JsError::new(&format!("Bad TParamsOfMultisigBalances: {e:?}")))?;
 
-    let balances =
-        crate::services::multisig::multisig_balances(params.endpoints, params.address)
-            .await
-            .map_err(|e| JsError::new(&format!("multisig_balances failed: {e:?}")))?;
+    let balances = crate::services::multisig::multisig_balances(params.endpoints, params.address)
+        .await
+        .map_err(|e| JsError::new(&format!("multisig_balances failed: {e:?}")))?;
 
     // Serialize the map as a plain JS object: { "2": "10000000000", ... }.
     let js = balances

@@ -4311,19 +4311,20 @@ fn shellnet_endpoints() -> Vec<String> {
 /// and assert idempotency (no second deploy).
 #[tokio::test]
 async fn test_deploy_multisig_via_giver() {
-    let result = bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
-        endpoints: shellnet_endpoints(),
-        keys: None,
-        owners_pubkey: None,
-        req_confirms: None,
-        req_confirms_data: None,
-        constructor_value: None,
-        giver_value: None,
-        giver_ecc: None,
-        wait_for_active: Some(true),
-    })
-    .await
-    .expect("deploy_multisig_via_giver failed");
+    let result =
+        bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
+            endpoints: shellnet_endpoints(),
+            keys: None,
+            owners_pubkey: None,
+            req_confirms: None,
+            req_confirms_data: None,
+            constructor_value: None,
+            giver_value: None,
+            giver_ecc: None,
+            wait_for_active: Some(true),
+        })
+        .await
+        .expect("deploy_multisig_via_giver failed");
 
     println!(
         "deployed multisig: address={} public={} already_deployed={} tx={:?}",
@@ -4331,8 +4332,7 @@ async fn test_deploy_multisig_via_giver() {
     );
 
     // Canonical dApp-scoped address: `<id>::<id>` with both halves equal 64-hex.
-    let (left, right) =
-        result.address.split_once("::").expect("address must be <id>::<id>");
+    let (left, right) = result.address.split_once("::").expect("address must be <id>::<id>");
     assert_eq!(left, right, "both halves must be equal, got {}", result.address);
     assert_eq!(left.len(), 64, "id half must be 64-hex, got {}", result.address);
     assert!(
@@ -4359,20 +4359,19 @@ async fn test_deploy_multisig_via_giver() {
 
     // Idempotency: same keys -> same address, no second deploy, no giver spend.
     let keys = KeyPair { public: result.public.clone(), secret: result.secret.clone() };
-    let again =
-        bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
-            endpoints: shellnet_endpoints(),
-            keys: Some(keys),
-            owners_pubkey: None,
-            req_confirms: None,
-            req_confirms_data: None,
-            constructor_value: None,
-            giver_value: None,
-            giver_ecc: None,
-            wait_for_active: Some(true),
-        })
-        .await
-        .expect("idempotent re-deploy failed");
+    let again = bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
+        endpoints: shellnet_endpoints(),
+        keys: Some(keys),
+        owners_pubkey: None,
+        req_confirms: None,
+        req_confirms_data: None,
+        constructor_value: None,
+        giver_value: None,
+        giver_ecc: None,
+        wait_for_active: Some(true),
+    })
+    .await
+    .expect("idempotent re-deploy failed");
 
     assert_eq!(again.address, result.address, "same keys must yield same address");
     assert!(again.already_deployed, "second run must detect existing Active account");
@@ -4382,15 +4381,11 @@ async fn test_deploy_multisig_via_giver() {
     // Note: giver SHELL lands in the account's base `balance`, so ECC[2] reads
     // back as a registered-but-zero slot here; this binding returns `account.ecc`
     // verbatim by design.
-    let balances =
-        bee_wallet::multisig_balances(shellnet_endpoints(), result.address.clone())
-            .await
-            .expect("multisig_balances failed");
+    let balances = bee_wallet::multisig_balances(shellnet_endpoints(), result.address.clone())
+        .await
+        .expect("multisig_balances failed");
     println!("multisig_balances = {balances:?}");
-    assert!(
-        balances.contains_key(&2),
-        "SHELL (ECC[2]) slot should be present, got {balances:?}"
-    );
+    assert!(balances.contains_key(&2), "SHELL (ECC[2]) slot should be present, got {balances:?}");
 }
 
 /// Brick 1 in isolation: address derivation is deterministic for fixed inputs
@@ -4409,12 +4404,10 @@ async fn test_compute_multisig_address_deterministic() {
         constructor_value: "0".to_string(),
     };
 
-    let a = bee_wallet::compute_multisig_address(ctx.clone(), &spec)
-        .await
-        .expect("compute address a");
-    let b = bee_wallet::compute_multisig_address(ctx.clone(), &spec)
-        .await
-        .expect("compute address b");
+    let a =
+        bee_wallet::compute_multisig_address(ctx.clone(), &spec).await.expect("compute address a");
+    let b =
+        bee_wallet::compute_multisig_address(ctx.clone(), &spec).await.expect("compute address b");
     assert_eq!(a, b, "address must be deterministic for fixed spec");
     assert!(a.starts_with("0:"));
 
@@ -4428,8 +4421,7 @@ async fn test_compute_multisig_address_deterministic() {
         req_confirms_data: 1,
         constructor_value: "0".to_string(),
     };
-    let c = bee_wallet::compute_multisig_address(ctx, &other_spec)
-        .await
-        .expect("compute address c");
+    let c =
+        bee_wallet::compute_multisig_address(ctx, &other_spec).await.expect("compute address c");
     assert_ne!(a, c, "different keys must yield a different address");
 }
