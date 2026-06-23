@@ -759,6 +759,55 @@ impl Wallet {
     }
 }
 
+/// Free function (no `Wallet` instance, no api_url/app_id): deploy a flat
+/// Multisig on shellnet, funding the future address from the default giver.
+/// Always returns the owner keypair — the frontend MUST persist `secret`.
+#[wasm_bindgen(js_name = deploy_multisig_via_giver)]
+pub async fn deploy_multisig_via_giver(
+    params: dto::multisig::TParamsOfDeployMultisigViaGiver,
+) -> Result<dto::multisig::TResultOfDeployMultisigViaGiver, JsError> {
+    use wasm_bindgen::JsCast;
+
+    let params_val: JsValue = params.into();
+    let params: crate::services::multisig::ParamsOfDeployMultisigViaGiver =
+        serde_wasm_bindgen::from_value(params_val)
+            .map_err(|e| JsError::new(&format!("Bad TParamsOfDeployMultisigViaGiver: {e:?}")))?;
+
+    let result = crate::services::multisig::deploy_multisig_via_giver(params)
+        .await
+        .map_err(|e| JsError::new(&format!("deploy_multisig_via_giver failed: {e:?}")))?;
+
+    let js = serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("serialize result failed: {e:?}")))?;
+    Ok(js.unchecked_into::<dto::multisig::TResultOfDeployMultisigViaGiver>())
+}
+
+/// Free function: ECC balances of any account by address as
+/// `{ currency_id: raw_amount_string }`. Generic — works on a flat multisig,
+/// unlike the multifactor-specific balance reader.
+#[wasm_bindgen(js_name = multisig_balances)]
+pub async fn multisig_balances(
+    params: dto::multisig::TParamsOfMultisigBalances,
+) -> Result<dto::multisig::TMultisigBalances, JsError> {
+    use serde::Serialize;
+    use wasm_bindgen::JsCast;
+
+    let params_val: JsValue = params.into();
+    let params: crate::services::multisig::ParamsOfMultisigBalances =
+        serde_wasm_bindgen::from_value(params_val)
+            .map_err(|e| JsError::new(&format!("Bad TParamsOfMultisigBalances: {e:?}")))?;
+
+    let balances = crate::services::multisig::multisig_balances(params.endpoints, params.address)
+        .await
+        .map_err(|e| JsError::new(&format!("multisig_balances failed: {e:?}")))?;
+
+    // Serialize the map as a plain JS object: { "2": "10000000000", ... }.
+    let js = balances
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .map_err(|e| JsError::new(&format!("serialize balances failed: {e:?}")))?;
+    Ok(js.unchecked_into::<dto::multisig::TMultisigBalances>())
+}
+
 #[cfg(not(feature = "single-wasm"))]
 #[wasm_bindgen(start)]
 pub fn start() {}

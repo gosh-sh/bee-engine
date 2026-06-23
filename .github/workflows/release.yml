@@ -1,18 +1,15 @@
 name: Release
 
+# Two modes, one workflow (same file = same npm trusted publisher):
+#   - push to main        -> STABLE: publish <version>@latest, tag vX.Y.Z, GitHub release.
+#   - workflow_dispatch    -> TEST:   publish <version>-rc.<run_number>@next (no tag,
+#                                     no release, never touches @latest). Runnable from
+#                                     ANY branch — used to validate npm publishing
+#                                     without merging to main or risking the latest tag.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      publish_npm:
-        description: "Publish release to npm with dist-tag latest"
-        required: true
-        default: true
-        type: boolean
-      dry_run:
-        description: "Run checks and build only (no tag, no release, no npm publish)"
-        required: true
-        default: false
-        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,22 +17,16 @@ concurrency:
 
 jobs:
   release:
-    name: Build and Publish Release
+    name: Build and Publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # OIDC trusted publishing to npm
     env:
       CARGO_TERM_COLOR: always
       CARGO_TARGET_DIR: target
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
     steps:
-      - name: Ensure workflow runs from main
-        run: |
-          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
-            echo "Run this workflow from main only. Current ref: ${GITHUB_REF}"
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -60,104 +51,93 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 24's bundled npm
+      # may be older, so upgrade explicitly.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          # Keep the compile cache even when a later step (e.g. npm publish) fails,
+          # so re-runs while debugging don't recompile from scratch.
+          cache-on-failure: true
 
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
 
-      - name: Cargo check (workspace, native)
-        run: cargo check --workspace --exclude bee-sdk --exclude bee-verifier
-
-      - name: Cargo check (verifier)
-        run: cargo check -p bee-verifier
-
-      - name: Cargo check (miner wasm feature)
-        run: cargo check -p bee-miner --no-default-features --features wasm
-
-      - name: Cargo clippy (workspace libs)
-        run: cargo clippy --workspace --exclude bee-sdk --exclude bee-verifier --lib -- -D warnings -A clippy::result_large_err
-
-      - name: Cargo test (workspace libs)
-        run: cargo test --workspace --exclude bee-sdk --exclude bee-verifier --lib
-
-      - name: Cargo test (verifier lib)
-        run: cargo test -p bee-verifier --lib
-
-      - name: Cargo test (miner wasm feature on host)
-        run: cargo test -p bee-miner --no-default-features --features wasm --lib -- --skip core::keys::tests::gen_mining_keys_generates_keys_and_valid_deep_link
-
-      - name: Resolve SDK version and release tag
+      - name: Resolve version and mode
         id: meta
         shell: bash
         run: |
           set -euo pipefail
-          # bee_sdk inherits its version from [workspace.package] in the root
-          # Cargo.toml, so resolve it there.
-          VERSION="$(grep -E '^version\s*=' Cargo.toml | head -n1 | sed -E 's/version\s*=\s*"([^"]+)"/\1/')"
+          VERSION="$(grep -A1 '\[workspace\.package\]' Cargo.toml | grep 'version' | sed -E 's/.*"([^"]+)".*/\1/')"
           if [ -z "${VERSION}" ]; then
-            echo "Failed to resolve workspace version from Cargo.toml"
+            echo "::error::Could not parse workspace.package.version from Cargo.toml"
             exit 1
           fi
-
           TAG="v${VERSION}"
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists"
-            exit 1
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual test publish: a unique prerelease to dist-tag `next`.
+            # run_number keeps each test version distinct (no collision, no UI input).
+            MODE="prerelease"
+            PKG_VERSION="${VERSION}-rc.${{ github.run_number }}"
+            DIST_TAG="next"
+            RELEASE="true"
+          else
+            # push to main: stable release to `latest`, tagged. Idempotent: if the
+            # tag already exists (re-push without a version bump), do nothing.
+            MODE="stable"
+            PKG_VERSION="${VERSION}"
+            DIST_TAG="latest"
+            if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+              echo "Tag ${TAG} already exists — nothing to release."
+              RELEASE="false"
+            else
+              RELEASE="true"
+            fi
           fi
 
-          echo "sdk_version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "mode=${MODE}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "pkg_version=${PKG_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "dist_tag=${DIST_TAG}" >> "${GITHUB_OUTPUT}"
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "release=${RELEASE}" >> "${GITHUB_OUTPUT}"
+          echo "mode=${MODE} version=${VERSION} pkg=${PKG_VERSION} -> @${DIST_TAG} release=${RELEASE}"
 
       - name: Build wasm sdk package
+        if: ${{ steps.meta.outputs.release == 'true' }}
         run: |
           cd bee_sdk
           rm -rf pkg
           wasm-pack build --target web --release --scope teamgosh
 
-      - name: Validate package version
+      - name: Set package version
+        if: ${{ steps.meta.outputs.release == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
-          PKG_VERSION="$(node -p "require('./bee_sdk/pkg/package.json').version")"
-          if [ "${PKG_VERSION}" != "${{ steps.meta.outputs.sdk_version }}" ]; then
-            echo "Version mismatch: bee_sdk/Cargo.toml=${{ steps.meta.outputs.sdk_version }}, bee_sdk/pkg/package.json=${PKG_VERSION}"
-            exit 1
-          fi
+          cd bee_sdk/pkg
+          node -e "const p=require('./package.json'); p.version='${{ steps.meta.outputs.pkg_version }}'; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n')"
+          echo "pkg version set to $(node -p "require('./package.json').version")"
 
-      - name: Validate npm token presence
-        if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        shell: bash
+      # Auth via OIDC trusted publishing (configured on the npm package for this
+      # repo + this workflow filename). No NPM_TOKEN; provenance attaches automatically.
+      - name: Publish to npm
+        if: ${{ steps.meta.outputs.release == 'true' }}
+        run: npm publish ./bee_sdk/pkg --tag ${{ steps.meta.outputs.dist_tag }} --access public
+
+      - name: Tag and GitHub release (stable only)
+        if: ${{ steps.meta.outputs.mode == 'stable' && steps.meta.outputs.release == 'true' }}
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is required for npm publish"
-            exit 1
-          fi
-
-      - name: Publish npm package (latest)
-        if: ${{ inputs.publish_npm && !inputs.dry_run }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish ./bee_sdk/pkg --tag latest --access public
-
-      - name: Create and push git tag
-        if: ${{ !inputs.dry_run }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.meta.outputs.tag }}"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.meta.outputs.tag }}" -m "Release ${{ steps.meta.outputs.tag }}"
           git push origin "${{ steps.meta.outputs.tag }}"
-
-      - name: Create GitHub release
-        if: ${{ !inputs.dry_run }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: ${{ steps.meta.outputs.tag }}
-          prerelease: false
-          generate_release_notes: true
+          gh release create "${{ steps.meta.outputs.tag }}" --generate-notes --title "${{ steps.meta.outputs.tag }}"

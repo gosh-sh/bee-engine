@@ -6,6 +6,7 @@ pub(crate) mod deploy;
 pub(crate) mod keys;
 pub(crate) mod miner;
 pub(crate) mod multifactor;
+pub(crate) mod multisig;
 pub(crate) mod names;
 pub(crate) mod tx;
 pub(crate) mod write;

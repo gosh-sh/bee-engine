@@ -18,6 +18,7 @@ pub mod deploy;
 pub mod dex;
 pub mod miner;
 pub mod multifactor;
+pub mod multisig;
 pub mod resolvers;
 pub mod tokens;
 pub mod transaction;

@@ -3,6 +3,9 @@ name = "bee-sdk"
 version.workspace = true
 license.workspace = true
 edition.workspace = true
+# wasm-pack copies this into pkg/package.json's `repository`; npm provenance
+# (OIDC trusted publishing) rejects the publish unless it matches the source repo.
+repository = "https://github.com/gosh-sh/bee-engine"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

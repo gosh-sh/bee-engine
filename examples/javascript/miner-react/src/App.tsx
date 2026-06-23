@@ -15,7 +15,7 @@ import "./App.css";
 import { useEffect, useRef, useState } from "react";
 
 const APP_ID = "0x0000000000000000000000000000000000000000000000000000000000000000";
-const ENDPOINTS = ["https://shellnet.ackinacki.org"];
+const ENDPOINTS = ["https://mainnet.ackinacki.org"];
 const API_URL = "https://app-backend-dev.ackinacki.org/api";
 const ACTIVE_SESSION_STORAGE_KEY = "bee_connect_demo_active_session_v1";
 const MINING_KEYS_STORAGE_PREFIX = "bee_connect_demo_mining_keys_v1";
@@ -242,16 +242,21 @@ async function isSessionStillActive(connection: WalletConnection): Promise<boole
   if (
     resolvedProfileAddress.trim().toLowerCase() !== connection.profileAddress.trim().toLowerCase()
   ) {
-    console.warn("[SESSION_MONITOR] profile address mismatch — resolved:", resolvedProfileAddress, "stored:", connection.profileAddress);
+    console.warn(
+      "[SESSION_MONITOR] profile address mismatch — resolved:",
+      resolvedProfileAddress,
+      "stored:",
+      connection.profileAddress,
+    );
     return false;
   }
 
-  const deployed = await beeConnect.is_session_profile_deployed(
-    ENDPOINTS,
-    connection.description,
-  );
+  const deployed = await beeConnect.is_session_profile_deployed(ENDPOINTS, connection.description);
   if (!deployed) {
-    console.warn("[SESSION_MONITOR] session profile NOT deployed for description:", connection.description);
+    console.warn(
+      "[SESSION_MONITOR] session profile NOT deployed for description:",
+      connection.description,
+    );
   }
   return deployed;
 }
@@ -402,11 +407,7 @@ function WalletConnect({ onConnected }: WalletConnectProps) {
               : "Scan QR in wallet app"}
           </div>
           <div className="connect-qr-wrap">
-            <QRCodeSVG
-              className="connect-qr"
-              value={deepLink}
-              size={280}
-            />
+            <QRCodeSVG className="connect-qr" value={deepLink} size={280} />
           </div>
           <div className="connect-actions">
             <a href={deepLink} target="_blank" rel="noreferrer" className="connect-open">
@@ -472,7 +473,12 @@ function VerifyWalletPanel({
         30,
         1000,
       );
-      console.log("[VERIFY] sign_challenge sent. sent_at:", challengeResult.sent_at, "message_id:", challengeResult.message_id);
+      console.log(
+        "[VERIFY] sign_challenge sent. sent_at:",
+        challengeResult.sent_at,
+        "message_id:",
+        challengeResult.message_id,
+      );
 
       // Do NOT persist session state yet — if wait_challenge_response times out,
       // the DH chain stays at the pre-challenge position so retry is possible.
@@ -489,12 +495,17 @@ function VerifyWalletPanel({
         120,
         2000,
       );
-      console.log("[VERIFY] challenge_response received. nonce match:", response.nonce === nonce, "wallet:", response.wallet_address);
+      console.log(
+        "[VERIFY] challenge_response received. nonce match:",
+        response.nonce === nonce,
+        "wallet:",
+        response.wallet_address,
+      );
 
       // Persist session state only after successful response —
       // both sign_challenge outbound rekey and challenge_response inbound rekey.
-      const finalState = response.updated_session_state_json
-        ?? challengeResult.updated_session_state_json;
+      const finalState =
+        response.updated_session_state_json ?? challengeResult.updated_session_state_json;
       if (finalState) {
         connection.sessionStateJson = finalState;
         writeStoredWalletConnection(connection);
@@ -1115,11 +1126,14 @@ function App() {
         }
 
         if (!exists) {
-          console.error("[SESSION_MONITOR] session inactive — dropping connection. wallet:", walletConnection.walletName, "profile:", walletConnection.profileAddress);
-          clearStoredMiningKeys(walletConnection);
-          setSessionMonitorError(
-            "Wallet disconnected the session. Please reconnect.",
+          console.error(
+            "[SESSION_MONITOR] session inactive — dropping connection. wallet:",
+            walletConnection.walletName,
+            "profile:",
+            walletConnection.profileAddress,
           );
+          clearStoredMiningKeys(walletConnection);
+          setSessionMonitorError("Wallet disconnected the session. Please reconnect.");
           setWalletConnection(null);
           return;
         }
@@ -1276,9 +1290,7 @@ function App() {
                 (NACKL: {nacklBalance ?? "..."})
               </span>
               {walletConnection.inlineChallenge && (
-                <span style={{ color: "#2ecc71", marginLeft: "8px" }}>
-                  verified at connect
-                </span>
+                <span style={{ color: "#2ecc71", marginLeft: "8px" }}>verified at connect</span>
               )}
             </div>
             {walletConnection.inlineChallenge && (
