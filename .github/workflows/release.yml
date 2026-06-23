@@ -61,6 +61,10 @@ jobs:
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
+        with:
+          # Keep the compile cache even when a later step (e.g. npm publish) fails,
+          # so re-runs while debugging don't recompile from scratch.
+          cache-on-failure: true
 
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
