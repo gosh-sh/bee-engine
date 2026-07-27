@@ -125,6 +125,15 @@ pub struct ConnectSessionMessage {
     pub ts: Option<u64>,
     pub raw_message_json: String,
     pub body_json: String,
+    /// `true` when the encrypted body was decrypted and parsed as JSON with the
+    /// secret supplied to the parse call. Note that `body_json` is NOT a usable
+    /// substitute for this flag: on decrypt failure it falls back to the raw
+    /// envelope body, so it is never empty. Callers deciding whether a message
+    /// was really readable (e.g. whether to advance DH re-key state) must look
+    /// at this field, not at the typed `*_body` fields — those stay `None` for
+    /// any application-level `msg_type` this crate does not know.
+    #[serde(default)]
+    pub body_decrypted: bool,
     pub wallet_hello: Option<WalletHelloMetadata>,
     pub set_mining_keys: Option<SetMiningKeysMessageBody>,
     pub client_disconnect: Option<ClientDisconnectMessageBody>,
@@ -429,6 +438,7 @@ pub fn parse_connect_session_message_with_secret(
         ts: envelope.ts,
         raw_message_json: raw_message_json.to_string(),
         body_json,
+        body_decrypted: decoded_body.is_some(),
         wallet_hello: None,
         set_mining_keys: None,
         client_disconnect: None,
@@ -627,6 +637,75 @@ mod tests {
         assert!(parsed.wallet_hello.is_none());
         assert!(parsed.set_mining_keys.is_none());
         assert!(parsed.client_disconnect.is_none());
+    }
+
+    /// An application-level `msg_type` this crate knows nothing about still has
+    /// to report `body_decrypted`, otherwise the re-key branch in
+    /// `modules::connect::query_session_messages` treats it as corrupted and
+    /// drops it without advancing the DH state.
+    #[test]
+    fn parse_unknown_encrypted_message_reports_body_decrypted() {
+        let encryption_secret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let ts = 100u64;
+        let seq = 1_700_000_011_000u64;
+        let nonce = [11u8; 24];
+        let salt = [12u8; 32];
+        let msg_type = "agent_onboard_request";
+        let body = serde_json::json!({ "agent_id": "agent_1" });
+        let aad = connect_message_aad("sess_1", "c2w", seq, msg_type, ts).expect("aad");
+        let key = derive_connect_message_key(encryption_secret, &salt).expect("key");
+        let cipher = XChaCha20Poly1305::new((&key).into());
+        let body_bytes = serde_json::to_vec(&body).expect("body");
+        let ciphertext = cipher
+            .encrypt(XNonce::from_slice(&nonce), Payload { msg: &body_bytes, aad: &aad })
+            .expect("encrypt");
+        let raw = serde_json::json!({
+            "v": CONNECT_MESSAGE_VERSION,
+            "session_id": "sess_1",
+            "dir": "c2w",
+            "seq": seq,
+            "type": msg_type,
+            "ts": ts,
+            "enc": {
+                "alg": CONNECT_MESSAGE_ENC_XCHACHA20POLY1305_HKDF_SHA256,
+                "nonce": URL_SAFE_NO_PAD.encode(nonce),
+                "salt": URL_SAFE_NO_PAD.encode(salt),
+            },
+            "body": URL_SAFE_NO_PAD.encode(ciphertext),
+        })
+        .to_string();
+
+        let parsed = parse_connect_session_message_with_secret(
+            &raw,
+            "sess_1",
+            Some(encryption_secret),
+            "evt_11".to_string(),
+            1100,
+        )
+        .expect("parse");
+        assert!(parsed.body_decrypted, "unknown msg_type must still report a decrypted body");
+        assert_eq!(parsed.body_json, serde_json::to_string(&body).expect("body json"));
+        assert!(parsed.wallet_hello.is_none());
+        assert!(parsed.set_mining_keys.is_none());
+        assert!(parsed.client_disconnect.is_none());
+        assert!(parsed.sign_challenge.is_none());
+        assert!(parsed.challenge_response.is_none());
+
+        // Wrong secret: body stays undecrypted, yet body_json falls back to the
+        // raw ciphertext envelope body — which is why body_json can never be
+        // used as the "did it decrypt" signal.
+        let wrong_secret = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let undecrypted = parse_connect_session_message_with_secret(
+            &raw,
+            "sess_1",
+            Some(wrong_secret),
+            "evt_11".to_string(),
+            1100,
+        )
+        .expect("parse");
+        assert!(!undecrypted.body_decrypted);
+        assert!(!undecrypted.body_json.is_empty());
+        assert_ne!(undecrypted.body_json, "null");
     }
 
     #[test]

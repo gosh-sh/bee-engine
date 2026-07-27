@@ -73,10 +73,10 @@ pub fn is_confirmation_pending_error(err: &crate::errors::AppError) -> bool {
 /// (see `bee_infra::retry` doc).
 ///
 /// Available for opt-in use by callers that want HTTP-transient retries
-/// (combine with [`with_retry`] via the `should_retry` parameter). Not
-/// wired into any high-level read method by default — that decision
-/// belongs to the caller per the retry-policy ticket.
-#[allow(dead_code)]
+/// (combine with [`with_retry`] via the `should_retry` parameter). Used by
+/// the multisig giver/deploy path (`services::multisig::send_should_retry`);
+/// not wired into high-level read methods by default — that decision belongs
+/// to the caller per the retry-policy ticket.
 pub fn is_retryable_http_transient(err: &crate::errors::AppError) -> bool {
     // tvm_client::ErrorCode::HttpRequestSendError == 11.
     if err.error_code.as_deref() == Some("11") {
