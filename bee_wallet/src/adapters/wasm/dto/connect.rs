@@ -19,6 +19,7 @@ pub struct ConnectSessionMessage {
     ts: Option<u64>,
     raw_message_json: String,
     body_json: String,
+    body_decrypted: bool,
     wallet_name: Option<String>,
     wallet_address: Option<String>,
     challenge_nonce: Option<String>,
@@ -66,6 +67,7 @@ impl From<InnerConnectSessionMessage> for ConnectSessionMessage {
             ts: value.ts,
             raw_message_json: value.raw_message_json,
             body_json: value.body_json,
+            body_decrypted: value.body_decrypted,
             wallet_name,
             wallet_address,
             challenge_nonce,
@@ -121,6 +123,14 @@ impl ConnectSessionMessage {
     #[wasm_bindgen(getter)]
     pub fn body_json(&self) -> String {
         self.body_json.clone()
+    }
+
+    /// `true` when the encrypted body was actually decrypted for this message.
+    /// `body_json` is not a substitute: it falls back to the raw envelope body
+    /// when decryption fails, so it is always non-empty.
+    #[wasm_bindgen(getter)]
+    pub fn body_decrypted(&self) -> bool {
+        self.body_decrypted
     }
 
     #[wasm_bindgen(getter)]

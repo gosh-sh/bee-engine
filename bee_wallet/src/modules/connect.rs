@@ -209,15 +209,12 @@ impl<'a> ConnectModule<'a> {
                         if let Some(mut msg) = parsed_with_rekey {
                             // parse returns Some for any valid envelope, even
                             // when body decrypt fails. Only advance the DH
-                            // state if the body was actually decrypted — at
-                            // least one typed field must be populated.
-                            let body_decrypted = msg.wallet_hello.is_some()
-                                || msg.set_mining_keys.is_some()
-                                || msg.client_disconnect.is_some()
-                                || msg.sign_challenge.is_some()
-                                || msg.challenge_response.is_some();
-
-                            if body_decrypted {
+                            // state if the body was actually decrypted. This
+                            // must come from the parse itself: keying it off
+                            // the typed body fields would drop every
+                            // application-level msg_type this crate does not
+                            // know, since none of them populate a typed field.
+                            if msg.body_decrypted {
                                 msg.session_state_after = Some(rekey.updated_state.clone());
                                 current_state = Some(rekey.updated_state);
                                 had_successful_rekey = true;
