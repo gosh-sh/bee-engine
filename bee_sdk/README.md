@@ -123,7 +123,7 @@ Vendored builds:
 | `code` | contract | code hash |
 |---|---|---|
 | *(omitted)* | DexDo flat Multisig | — |
-| `"update_custodian_v2"` | `UpdateCustodianMultisigWallet` v2.1.0, `sold 0.81.0` | `31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3` |
+| `"update_custodian_v2"` | `UpdateCustodianMultisigWallet` v2.1.0, `sold 0.81.0` | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
 
 In form 3, `tvc_b64` and `abi` are both required and must come from the *same*
 build: on ABI ≥ 2.3 the state-init data cell is rebuilt from the ABI's `fields`

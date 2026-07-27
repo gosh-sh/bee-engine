@@ -4440,7 +4440,7 @@ async fn test_compute_multisig_address_deterministic() {
 /// (acki-nacki#2413, `sold 0.81.0`) — what a node reports for an account
 /// running it.
 const UPDATE_CUSTODIAN_V2_CODE_HASH: &str =
-    "31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3";
+    "09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded";
 
 /// Brick 1 under a build override: the vendored pair is a *default*, not a
 /// wiring. Four properties, measured against the real encoder:

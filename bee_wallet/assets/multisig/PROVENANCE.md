@@ -5,7 +5,7 @@ Two builds are vendored here:
 | build | files | selected by | code hash |
 |---|---|---|---|
 | DexDo flat Multisig (**default**) | `Multisig.{tvc,abi.json}` | `code` omitted | `.tvc` sha256 `d3b38bca…` |
-| `UpdateCustodianMultisigWallet` v2.1.0 | `v2/UpdateCustodianMultisigWallet.{tvc,abi.json}` | `code: "update_custodian_v2"` | `31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3` |
+| `UpdateCustodianMultisigWallet` v2.1.0 | `v2/UpdateCustodianMultisigWallet.{tvc,abi.json}` | `code: "update_custodian_v2"` | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
 
 A caller can also pass its own build as `code: { tvc_b64, abi }` — see
 "Any other build" below.
@@ -32,37 +32,49 @@ Current `Multisig.tvc` sha256: d3b38bcac8f60c1274f6099fc1e75746c02a2ff22af4efc68
 
 ## `v2/` — UpdateCustodianMultisigWallet v2.1.0
 
-Vendored **verbatim** (not recompiled) from `gosh-sh/acki-nacki` PR #2413, branch
-`contracts/multisig`, path
-`contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/`. Git blob SHAs of
-the files here match that branch exactly:
+Vendored **verbatim** (not recompiled) from `gosh-sh/acki-nacki` branch `dev`,
+path `contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/` — the merged
+form of PR #2413 (`dev` commit `6ad89549a0b8`, "new Contracts/multisig (#2413)").
+Upstream names carry a `_v2` suffix that is redundant inside `v2/`, so they are
+stored here without it; the git blob SHAs match upstream exactly:
 
-    UpdateCustodianMultisigWallet.tvc       7147 B   blob c289fe7f746ca63ad8c067019eda43072dbda066
-    UpdateCustodianMultisigWallet.abi.json 10856 B   blob 90b8f8518666a49e1caf30aeec332fcb22ab7311
+    upstream UpdateCustodianMultisigWallet_v2.tvc       7150 B   blob 9610c471dce949f6ec84b096711cb7f43c78343b
+    upstream UpdateCustodianMultisigWallet_v2.abi.json 10856 B   blob 90b8f8518666a49e1caf30aeec332fcb22ab7311
 
-    .tvc  sha256    3e680a80506fce6dd8c3b7209a6fed880b63a94e2317efe81f15173d0015d2d0
-    code hash       31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3
+    .tvc  sha256    535e180e85ee019c23631c6046449fa2a5536d88f55b26d64e026d671e82d520
+    code hash       09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded
     compiler        sol 0.81.0
+
+Refreshed from `dev` on 2026-07-27, superseding the pre-merge artifact taken from
+branch `contracts/multisig` (`.tvc` 7147 B, sha256 `3e680a80…`, code hash
+`31e402bb…`). The ABI is byte-identical across the two; only the compiled code
+moved, so the **derived address of a v2 deploy changed** — anything that recorded
+a v2 address computed before this refresh must recompute it.
 
 To re-verify or refresh:
 
-    gh api "repos/gosh-sh/acki-nacki/contents/contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2?ref=contracts/multisig" \
+    gh api "repos/gosh-sh/acki-nacki/contents/contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2?ref=dev" \
       --jq '.[] | "\(.name) \(.sha)"'
     git hash-object v2/UpdateCustodianMultisigWallet.tvc      # must match the blob above
 
+The code hash is read straight out of the `.tvc` with
+`tvm_client::boc::decode_state_init` (`code_hash` = repr hash of the state-init
+code cell) — the same value a node reports for a deployed account.
+
 The `.tvc` sha256 is pinned in a unit test (`vendored_v2_asset_is_pinned`) and the
 code hash is asserted on-chain by the integration tests, so a swapped file fails
-in CI rather than on a network. **PR #2413 was unmerged when this was vendored** —
-re-check the blob SHAs after it lands.
+in CI rather than on a network.
 
 Relative to the default build its ABI is a strict superset by function set: all
 17 functions identical (constructor included), plus `submitUpdateCode(cell,cell)
 -> uint64` and `confirmUpdateCode(uint64)`. Its `fields` add `m_requestsMaskCode`
 and `m_code` — which is why it must be deployed with its own ABI (see below).
 
-Verified on shellnet through `deploy_multisig_via_giver` with
-`code: "update_custodian_v2"`: account Active, `exit_code: 0`, on-chain code hash
-as above.
+Verified on shellnet after the 2026-07-27 refresh, through
+`deploy_multisig_via_giver` with `code: "update_custodian_v2"`
+(`test_deploy_multisig_via_giver_update_custodian_v2`): account Active at
+`0480508b8bf07b3df8830ab758a61be0ee9b36427d9780466a66712277bb468c::…`, on-chain
+code hash `09f596d5…` as above.
 
 ## Any other build
 

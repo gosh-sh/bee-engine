@@ -25,7 +25,7 @@ export type TParamsOfDeployMultisigViaGiver = {
 
 // Builds vendored in this SDK, selectable by name — no need to ship a `.tvc`
 // from the frontend. "update_custodian_v2" is UpdateCustodianMultisigWallet
-// v2.1.0, code hash 31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3.
+// v2.1.0, code hash 09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded.
 export type TMultisigBuild = "update_custodian_v2";
 
 // Your own build. `tvc_b64` and `abi` are BOTH required: on ABI >= 2.3 the

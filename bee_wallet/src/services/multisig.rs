@@ -68,13 +68,12 @@ const MULTISIG_TVC: &[u8] = include_bytes!("../../assets/multisig/Multisig.tvc")
 
 /// `UpdateCustodianMultisigWallet` v2.1.0, the second vendored build — selected
 /// by name (`code: "update_custodian_v2"`) instead of shipping the `.tvc` from
-/// the frontend. Vendored verbatim from acki-nacki#2413 (branch
-/// `contracts/multisig`,
-/// `contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/`);
-/// code hash `31e402bb…`, `sold 0.81.0`. Its ABI is a strict superset of the
-/// default's (adds `submitUpdateCode`/`confirmUpdateCode`) but its `fields` add
-/// two storage slots, so it must be deployed with its OWN ABI — see
-/// [`MultisigCode`].
+/// the frontend. Vendored verbatim from `gosh-sh/acki-nacki` `dev`
+/// (`contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/`, the merged
+/// form of #2413); code hash `09f596d5…`, `sold 0.81.0`. Its ABI is a strict
+/// superset of the default's (adds `submitUpdateCode`/`confirmUpdateCode`) but
+/// its `fields` add two storage slots, so it must be deployed with its OWN ABI
+/// — see [`MultisigCode`].
 const UPDATE_CUSTODIAN_V2_ABI: &str =
     include_str!("../../assets/multisig/v2/UpdateCustodianMultisigWallet.abi.json");
 const UPDATE_CUSTODIAN_V2_TVC: &[u8] =
@@ -84,9 +83,12 @@ const UPDATE_CUSTODIAN_V2_TVC: &[u8] =
 const UPDATE_CUSTODIAN_V2_NAME: &str = "update_custodian_v2";
 /// sha256 of [`UPDATE_CUSTODIAN_V2_TVC`], pinned so a swapped asset is caught
 /// by a unit test rather than on-chain. Corresponds to code hash
-/// `31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3`.
+/// `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded`.
+/// Test-only: the fixture it guards is the only consumer, and CI lints the lib
+/// without `--tests`, where an ungated const reads as dead code.
+#[cfg(test)]
 const UPDATE_CUSTODIAN_V2_TVC_SHA256: &str =
-    "3e680a80506fce6dd8c3b7209a6fed880b63a94e2317efe81f15173d0015d2d0";
+    "535e180e85ee019c23631c6046449fa2a5536d88f55b26d64e026d671e82d520";
 
 /// Constructor parameters [`MultisigDeploySpec::encode_params`] hardcodes. An
 /// `abi` override must declare exactly these, in this order — otherwise the
@@ -141,7 +143,7 @@ pub struct MultisigCode {
 
 impl MultisigCode {
     /// `UpdateCustodianMultisigWallet` v2.1.0, vendored in this SDK — code hash
-    /// `31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3`. Over
+    /// `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded`. Over
     /// the wasm boundary the same build is `code: "update_custodian_v2"`.
     pub fn update_custodian_v2() -> Self {
         Self { tvc: UPDATE_CUSTODIAN_V2_TVC.to_vec(), abi: UPDATE_CUSTODIAN_V2_ABI.to_string() }
