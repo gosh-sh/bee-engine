@@ -86,7 +86,12 @@ tokio = { optional = true, version = "1.49.0", features = ["rt", "macros"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dodex-contracts = { git = "https://github.com/gosh-sh/dodex-backend.git", tag = "v1.0.0", package = "dodex-contracts" }
 
-[dev-dependencies]
+# Native integration tests (`tests/integration.rs`, `tests/dex_flows/`) only.
+# These pull the native tvm/kit/dodex graph, so they MUST stay off the wasm32
+# build — otherwise `wasm-pack test` (which forces `--tests`) drags native-only
+# crates (e.g. errno) into wasm32 and fails to compile. The matching test files
+# are guarded with `#![cfg(not(target_arch = "wasm32"))]`.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v3.0.0", features = ["default", "contracts"] }
 base64 = "0.22.1"
 bee-connect = { path = "../bee_connect" }
@@ -96,13 +101,13 @@ bee-crypto = { path = "../bee_crypto" }
 bee-miner = { path = "../bee_miner" }
 serde_json = "1"
 tokio = { version = "1.49.0", features = ["rt", "macros", "time"] }
-
 # DEX façade (`Dex`, halo2 prover, `proof` helpers) for the wallet-coupled
 # full-flow tests under `tests/dex_flows/` — the two multifactor flows that
 # exercise bee-wallet + DEX together. Native-only: pulls the heavy halo2 graph.
 # Raw contract wrappers come from `dodex-contracts` (a regular dep above).
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dodex-sdk = { git = "https://github.com/gosh-sh/dodex-backend.git", tag = "v1.0.0" }
 
+# wasm-bindgen-test backs the `#[wasm_bindgen_test]` unit tests in
+# `adapters/wasm` (run via `wasm-pack test --node`). Kept off the native build.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3.56"

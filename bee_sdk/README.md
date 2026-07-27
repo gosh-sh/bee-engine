@@ -79,9 +79,10 @@ const res = await deploy_multisig_via_giver({
   // keys?            — owner keypair; generated when omitted, always returned
   // owners_pubkey?   — custodians ["0x…"] (uint256[]), default [owner]
   // req_confirms?, req_confirms_data?  — default 1
-  // giver_value?     — SHELL (ECC[2]) gas top-up, default "10000000000"
-  // giver_ecc?       — extra ECC, { currency_id: "amount" }
+  // giver_value?     — SHELL (ECC[2]) gas top-up, default "1000000000000000"
+  // giver_ecc?       — extra ECC, Map<currency_id, "amount">
   // wait_for_active? — wait until Active, default true
+  // code?            — deploy a different multisig build (see below)
 });
 
 console.log(res.address);     // 0x… canonical <dapp>::<account>
@@ -94,6 +95,44 @@ const balances = await multisig_balances({
 });
 // e.g. { "2": "10000000000" }  (1 = NACKL, 2 = SHELL, 3 = USDC)
 ```
+
+#### Choosing the multisig build
+
+`code` picks which contract gets deployed. Three forms:
+
+```ts
+// 1. Omit it — the SDK's default build (DexDo flat Multisig).
+await deploy_multisig_via_giver({ endpoints });
+
+// 2. A build vendored in the SDK, by name. No `.tvc` to ship from the frontend.
+await deploy_multisig_via_giver({
+  endpoints,
+  code: "update_custodian_v2",   // UpdateCustodianMultisigWallet v2.1.0
+});
+
+// 3. Your own build.
+import abi from "./MyMultisig.abi.json";
+await deploy_multisig_via_giver({
+  endpoints,
+  code: { tvc_b64: myTvcBase64, abi },   // `abi`: object or string
+});
+```
+
+Vendored builds:
+
+| `code` | contract | code hash |
+|---|---|---|
+| *(omitted)* | DexDo flat Multisig | — |
+| `"update_custodian_v2"` | `UpdateCustodianMultisigWallet` v2.1.0, `sold 0.81.0` | `31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3` |
+
+In form 3, `tvc_b64` and `abi` are both required and must come from the *same*
+build: on ABI ≥ 2.3 the state-init data cell is rebuilt from the ABI's `fields`
+before the address is hashed, so mixing one build's code with another's ABI
+derives a different address whose storage layout the code doesn't agree with.
+Sending only one half is an error, not a default.
+
+The build is part of the address, so each one lands somewhere different — the
+returned `address` is always the one that was funded and deployed.
 
 ### Multifactor wallet
 

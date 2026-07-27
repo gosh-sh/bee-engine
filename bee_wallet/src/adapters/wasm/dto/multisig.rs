@@ -13,8 +13,31 @@ export type TParamsOfDeployMultisigViaGiver = {
     req_confirms_data?: number;
     constructor_value?: string;
     giver_value?: string;
-    giver_ecc?: Record<number, string>;
+    // Map, NOT Record: serde on the Rust side deserializes a JS Map's numeric
+    // keys into the u32 currency ids. A plain object/Record stringifies its keys
+    // and the WASM rejects them ("invalid type: string, expected u32").
+    giver_ecc?: Map<number, string>;
     wait_for_active?: boolean;
+    // Which multisig build to deploy. Omit for the SDK's default build, name a
+    // build vendored in the SDK, or pass your own code+ABI pair.
+    code?: TMultisigBuild | TMultisigCode;
+};
+
+// Builds vendored in this SDK, selectable by name — no need to ship a `.tvc`
+// from the frontend. "update_custodian_v2" is UpdateCustodianMultisigWallet
+// v2.1.0, code hash 31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3.
+export type TMultisigBuild = "update_custodian_v2";
+
+// Your own build. `tvc_b64` and `abi` are BOTH required: on ABI >= 2.3 the
+// state-init data cell is rebuilt from the ABI's `fields` list before the
+// address is hashed, so the ABI is part of the address. Mixing one build's code
+// with another's ABI derives an address whose storage layout the code does not
+// agree with — hence no way to pass just one.
+export type TMultisigCode = {
+    // The build's `.tvc`, base64-encoded.
+    tvc_b64: string;
+    // That build's `.abi.json` — stringified or the imported object.
+    abi: string | object;
 };
 
 export type TResultOfDeployMultisigViaGiver = {

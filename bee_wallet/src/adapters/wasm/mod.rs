@@ -773,9 +773,18 @@ pub async fn deploy_multisig_via_giver(
         serde_wasm_bindgen::from_value(params_val)
             .map_err(|e| JsError::new(&format!("Bad TParamsOfDeployMultisigViaGiver: {e:?}")))?;
 
-    let result = crate::services::multisig::deploy_multisig_via_giver(params)
-        .await
-        .map_err(|e| JsError::new(&format!("deploy_multisig_via_giver failed: {e:?}")))?;
+    let result =
+        crate::services::multisig::deploy_multisig_via_giver(params).await.map_err(|e| {
+            // Preserve the typed throttle signal: a rate-limited failure surfaces
+            // with a stable `RateLimited:` message prefix so the UI can branch on
+            // it (`err.message.startsWith("RateLimited")`) instead of treating it
+            // as a generic transport failure.
+            if e.kind.as_deref() == Some("rate_limited") {
+                JsError::new(&e.message)
+            } else {
+                JsError::new(&format!("deploy_multisig_via_giver failed: {e:?}"))
+            }
+        })?;
 
     let js = serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsError::new(&format!("serialize result failed: {e:?}")))?;
@@ -789,7 +798,6 @@ pub async fn deploy_multisig_via_giver(
 pub async fn multisig_balances(
     params: dto::multisig::TParamsOfMultisigBalances,
 ) -> Result<dto::multisig::TMultisigBalances, JsError> {
-    use serde::Serialize;
     use wasm_bindgen::JsCast;
 
     let params_val: JsValue = params.into();
@@ -801,11 +809,163 @@ pub async fn multisig_balances(
         .await
         .map_err(|e| JsError::new(&format!("multisig_balances failed: {e:?}")))?;
 
-    // Serialize the map as a plain JS object: { "2": "10000000000", ... }.
-    let js = balances
-        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+    let js = serialize_ecc_balances(balances)
         .map_err(|e| JsError::new(&format!("serialize balances failed: {e:?}")))?;
     Ok(js.unchecked_into::<dto::multisig::TMultisigBalances>())
+}
+
+/// Serialize ECC balances for the JS boundary as a plain object
+/// `{ "<currency_id>": "<raw_amount>" }` (the shape the `.d.ts` advertises as
+/// `Record<number, string>`).
+///
+/// `json_compatible()` emits maps as JS objects, whose keys MUST be strings; a
+/// raw `u32` key throws `Map key is not a string and cannot be an object key`.
+/// The catch: an EMPTY map has no key to reject, so the bug stays hidden until
+/// a wallet actually holds a non-zero ECC balance — which is exactly when the
+/// frontend needs the numbers. Stringifying the currency ids up front makes
+/// every map (empty or not) serialize to a real object.
+fn serialize_ecc_balances(
+    balances: std::collections::BTreeMap<u32, String>,
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    use serde::Serialize;
+    balances
+        .into_iter()
+        .map(|(id, amount)| (id.to_string(), amount))
+        .collect::<std::collections::BTreeMap<String, String>>()
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+}
+
+/// The `code` selector is a string-or-object union, and it crosses the boundary
+/// through `serde_wasm_bindgen`, not `serde_json` — so the native unit tests do
+/// not cover the shape a frontend actually sends. These run under
+/// `wasm-pack test --node`.
+#[cfg(all(test, target_arch = "wasm32"))]
+mod multisig_code_selector_tests {
+    use wasm_bindgen_test::*;
+
+    use crate::services::multisig::ParamsOfDeployMultisigViaGiver;
+
+    /// Deserializes `{ endpoints, code }` exactly as the wasm entry point does.
+    fn params_from_js(
+        code: wasm_bindgen::JsValue,
+    ) -> Result<ParamsOfDeployMultisigViaGiver, String> {
+        let params = js_sys::Object::new();
+        let endpoints = js_sys::Array::new();
+        endpoints.push(&wasm_bindgen::JsValue::from_str("https://example.invalid"));
+        js_sys::Reflect::set(&params, &"endpoints".into(), &endpoints).unwrap();
+        js_sys::Reflect::set(&params, &"code".into(), &code).unwrap();
+        serde_wasm_bindgen::from_value(params.into()).map_err(|e| format!("{e:?}"))
+    }
+
+    /// `code: "update_custodian_v2"` — a plain JS string must select the
+    /// vendored build (serde_wasm_bindgen routes strings through
+    /// `deserialize_any`).
+    #[wasm_bindgen_test]
+    fn named_build_arrives_as_a_js_string() {
+        let params = params_from_js(wasm_bindgen::JsValue::from_str("update_custodian_v2"))
+            .expect("named build must deserialize");
+        let code = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
+            .expect("named build must resolve");
+        assert!(!code.tvc.is_empty());
+        assert!(code.abi.contains("submitUpdateCode"), "must be the v2 ABI");
+    }
+
+    /// `code: { tvc_b64, abi }` with `abi` as an imported JS **object** — the
+    /// ergonomic shape. A plain object must survive `deserialize_any` into
+    /// `serde_json::Value`; if it didn't, this is where it would show.
+    #[wasm_bindgen_test]
+    fn custom_build_accepts_object_abi() {
+        let abi = js_sys::JSON::parse(r#"{"functions":[{"name":"constructor"}]}"#).unwrap();
+        let code = js_sys::Object::new();
+        js_sys::Reflect::set(&code, &"tvc_b64".into(), &"AQID".into()).unwrap();
+        js_sys::Reflect::set(&code, &"abi".into(), &abi).unwrap();
+
+        let params = params_from_js(code.into()).expect("custom build must deserialize");
+        let resolved = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
+            .expect("custom build must convert");
+        assert_eq!(resolved.tvc, vec![1, 2, 3]);
+        assert!(resolved.abi.starts_with('{'), "object ABI must render as JSON: {}", resolved.abi);
+    }
+
+    /// Omitting `code` keeps the default build.
+    #[wasm_bindgen_test]
+    fn absent_code_is_none() {
+        let params = params_from_js(wasm_bindgen::JsValue::UNDEFINED).expect("must deserialize");
+        assert!(params.code.is_none());
+    }
+
+    /// Half a pair must fail with the message that names the missing half.
+    #[wasm_bindgen_test]
+    fn half_a_pair_is_rejected_with_a_useful_message() {
+        let code = js_sys::Object::new();
+        js_sys::Reflect::set(&code, &"tvc_b64".into(), &"AQID".into()).unwrap();
+        let err = params_from_js(code.into()).expect_err("half a pair must not deserialize");
+        assert!(err.contains("`code.abi` is missing"), "got: {err}");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod multisig_balances_tests {
+    use std::collections::BTreeMap;
+
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_test::*;
+
+    use super::serialize_ecc_balances;
+
+    fn funded() -> BTreeMap<u32, String> {
+        // 1=NACKL, 2=SHELL, 3=USDC — raw integer amounts as strings.
+        BTreeMap::from([
+            (1u32, "1000000000000000".to_string()),
+            (2u32, "0".to_string()),
+            (3u32, "1000000000000000".to_string()),
+        ])
+    }
+
+    fn js_string_at(obj: &JsValue, key: &str) -> Option<String> {
+        js_sys::Reflect::get(obj, &JsValue::from_str(key)).unwrap().as_string()
+    }
+
+    /// The actual bug: a non-empty `{ currency_id: amount }` map must serialize
+    /// to a JS object with STRING keys instead of throwing "Map key is not a
+    /// string…". Pre-fix this path panicked the wasm call.
+    #[wasm_bindgen_test]
+    fn non_empty_balances_serialize_to_object_with_string_keys() {
+        let js = serialize_ecc_balances(funded()).expect("non-empty balances must serialize");
+        assert!(js.is_object(), "expected a plain JS object");
+
+        assert_eq!(js_string_at(&js, "1").as_deref(), Some("1000000000000000"));
+        assert_eq!(js_string_at(&js, "2").as_deref(), Some("0"));
+        assert_eq!(js_string_at(&js, "3").as_deref(), Some("1000000000000000"));
+
+        // Keys are the stringified ids, nothing more, nothing less.
+        let keys = js_sys::Object::keys(&js.unchecked_into::<js_sys::Object>());
+        assert_eq!(keys.length(), 3);
+    }
+
+    /// The empty-wallet case that masked the bug — still returns `{}`.
+    #[wasm_bindgen_test]
+    fn empty_balances_serialize_to_empty_object() {
+        let js = serialize_ecc_balances(BTreeMap::new()).expect("empty balances must serialize");
+        assert!(js.is_object());
+        let keys = js_sys::Object::keys(&js.unchecked_into::<js_sys::Object>());
+        assert_eq!(keys.length(), 0);
+    }
+
+    /// Regression guard for the stringify step: serializing the raw
+    /// `BTreeMap<u32, String>` (the pre-fix code) still fails on a non-empty
+    /// map. If serde_wasm_bindgen ever starts accepting integer keys here, this
+    /// test flips and tells us the workaround is no longer load-bearing.
+    #[wasm_bindgen_test]
+    fn raw_u32_keys_fail_without_stringify() {
+        use serde::Serialize;
+        let result = funded().serialize(&serde_wasm_bindgen::Serializer::json_compatible());
+        assert!(
+            result.is_err(),
+            "raw u32 keys unexpectedly serialized — the stringify workaround may be obsolete",
+        );
+    }
 }
 
 #[cfg(not(feature = "single-wasm"))]

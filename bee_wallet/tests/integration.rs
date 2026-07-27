@@ -2,6 +2,11 @@
 // Run sequentially to avoid flaky failures from queue contention:
 //
 //   cargo test -p bee-wallet -- --test-threads=1
+//
+// Native-only: pulls the tvm/kit graph and its native dev-deps live behind
+// `cfg(not(target_arch = "wasm32"))`. Compile to an empty crate on wasm32 so
+// `wasm-pack test` (which forces `--tests`) doesn't try to build them.
+#![cfg(not(target_arch = "wasm32"))]
 
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
@@ -4322,6 +4327,8 @@ async fn test_deploy_multisig_via_giver() {
             giver_value: None,
             giver_ecc: None,
             wait_for_active: Some(true),
+            // Vendored build; the override path is covered by its own test below.
+            code: None,
         })
         .await
         .expect("deploy_multisig_via_giver failed");
@@ -4369,6 +4376,7 @@ async fn test_deploy_multisig_via_giver() {
         giver_value: None,
         giver_ecc: None,
         wait_for_active: Some(true),
+        code: None,
     })
     .await
     .expect("idempotent re-deploy failed");
@@ -4402,6 +4410,7 @@ async fn test_compute_multisig_address_deterministic() {
         req_confirms: 1,
         req_confirms_data: 1,
         constructor_value: "0".to_string(),
+        code: None,
     };
 
     let a =
@@ -4420,8 +4429,147 @@ async fn test_compute_multisig_address_deterministic() {
         req_confirms: 1,
         req_confirms_data: 1,
         constructor_value: "0".to_string(),
+        code: None,
     };
     let c =
         bee_wallet::compute_multisig_address(ctx, &other_spec).await.expect("compute address c");
     assert_ne!(a, c, "different keys must yield a different address");
+}
+
+/// Code hash of the vendored `UpdateCustodianMultisigWallet` v2.1.0 build
+/// (acki-nacki#2413, `sold 0.81.0`) — what a node reports for an account
+/// running it.
+const UPDATE_CUSTODIAN_V2_CODE_HASH: &str =
+    "31e402bb4fc2bb740634ab00b074f2e4ae772f0744d8aabb7c51d44f430d86e3";
+
+/// Brick 1 under a build override: the vendored pair is a *default*, not a
+/// wiring. Four properties, measured against the real encoder:
+///
+/// 1. handing the vendored pair back explicitly lands on the very same address
+///    (byte-faithful plumbing);
+/// 2. different code moves the address — this is what proves the override
+///    reaches state-init derivation, so a caller deploying another build (e.g.
+///    `UpdateCustodianMultisigWallet` v2) funds the address it will occupy;
+/// 3. a different *ABI* moves it too: on ABI >= 2.3 the state-init data cell is
+///    rebuilt from the ABI's `fields`, which is precisely why `MultisigCode`
+///    pairs code with ABI instead of exposing two independent knobs;
+/// 4. a malformed override fails locally, before any encode or send.
+#[tokio::test]
+async fn test_compute_multisig_address_honors_build_override() {
+    let ctx = create_tvm_context();
+    let keys = ackinacki_kit::tvm_client::crypto::generate_random_sign_keys(ctx.clone())
+        .expect("generate keys");
+    let vendored_tvc = std::fs::read("assets/multisig/Multisig.tvc").expect("read vendored tvc");
+    let vendored_abi =
+        std::fs::read_to_string("assets/multisig/Multisig.abi.json").expect("read vendored abi");
+
+    let spec = |code: Option<bee_wallet::MultisigCode>| bee_wallet::MultisigDeploySpec {
+        keys: keys.clone(),
+        owners_pubkey: vec![format!("0x{}", keys.public)],
+        req_confirms: 1,
+        req_confirms_data: 1,
+        constructor_value: "0".to_string(),
+        code,
+    };
+
+    let default_address = bee_wallet::compute_multisig_address(ctx.clone(), &spec(None))
+        .await
+        .expect("compute default address");
+
+    // 1. Explicit override == the vendored pair.
+    let vendored =
+        bee_wallet::MultisigCode { tvc: vendored_tvc.clone(), abi: vendored_abi.clone() };
+    let explicit = bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(vendored)))
+        .await
+        .expect("compute address for explicit vendored override");
+    assert_eq!(default_address, explicit, "the explicit vendored pair must match the default");
+
+    // 2. The other vendored build (v2) is a different build: different address.
+    let v2 = bee_wallet::MultisigCode::update_custodian_v2();
+    let v2_address = bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(v2.clone())))
+        .await
+        .expect("compute v2 address");
+    assert_ne!(default_address, v2_address, "v2 must not land on the default build's address");
+
+    // 3. v2's code with the *default* ABI derives yet another address — the
+    // mismatch `MultisigCode` exists to prevent. v2's ABI is a strict superset by
+    // function set, so if the ABI were only a calling convention these two would
+    // agree; they don't, because its `fields` add `m_requestsMaskCode`/`m_code`
+    // and `fields` rebuild the state-init data cell before it is hashed.
+    let mismatched = bee_wallet::MultisigCode { tvc: v2.tvc.clone(), abi: vendored_abi.clone() };
+    let mismatched_address =
+        bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(mismatched)))
+            .await
+            .expect("compute mismatched address");
+    assert_ne!(
+        v2_address, mismatched_address,
+        "same code + another build's ABI must NOT resolve to the same address",
+    );
+
+    // 4. The vendored v2 code really is the artifact from acki-nacki#2413 — the
+    // code hash a node will report for it.
+    let decoded = ackinacki_kit::tvm_client::boc::decode_state_init(
+        ctx.clone(),
+        ackinacki_kit::tvm_client::boc::ParamsOfDecodeStateInit {
+            state_init: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &v2.tvc),
+            boc_cache: None,
+        },
+    )
+    .expect("decode v2 state init");
+    assert_eq!(decoded.code_hash.as_deref(), Some(UPDATE_CUSTODIAN_V2_CODE_HASH));
+    assert_eq!(decoded.compiler_version.as_deref(), Some("sol 0.81.0"));
+
+    // 5. Malformed override: refused locally, before any encode or send.
+    let empty = bee_wallet::MultisigCode { tvc: Vec::new(), abi: vendored_abi };
+    let err = bee_wallet::compute_multisig_address(ctx, &spec(Some(empty)))
+        .await
+        .expect_err("empty tvc override must be rejected");
+    assert!(err.message.contains("empty `tvc`"), "got: {}", err.message);
+}
+
+/// End-to-end on the *second* vendored build: deploy
+/// `UpdateCustodianMultisigWallet` v2 by name (`code: "update_custodian_v2"`,
+/// the shape a frontend uses) and confirm the node runs v2's code at the
+/// derived address. Guards the whole chain — asset → named lookup → address
+/// derivation → funding → deploy.
+#[tokio::test]
+async fn test_deploy_multisig_via_giver_update_custodian_v2() {
+    let result =
+        bee_wallet::deploy_multisig_via_giver(bee_wallet::ParamsOfDeployMultisigViaGiver {
+            endpoints: shellnet_endpoints(),
+            keys: None,
+            owners_pubkey: None,
+            req_confirms: None,
+            req_confirms_data: None,
+            constructor_value: None,
+            giver_value: None,
+            giver_ecc: None,
+            wait_for_active: Some(true),
+            code: Some(serde_json::from_value(serde_json::json!("update_custodian_v2")).unwrap()),
+        })
+        .await
+        .expect("v2 deploy via giver failed");
+
+    println!(
+        "deployed v2 multisig: address={} already_deployed={} tx={:?}",
+        result.address, result.already_deployed, result.deploy_tx
+    );
+
+    let (dapp, account) = result.address.split_once("::").expect("address must be <id>::<id>");
+    let mut deployed = ackinacki_kit::contracts::account::Account::new(
+        create_tvm_context(),
+        &format!("0:{account}"),
+        dapp.to_string(),
+    );
+    deployed.fetch().await.expect("fetch deployed v2 multisig");
+    assert_eq!(
+        deployed.acc_type,
+        ackinacki_kit::contracts::account::AccountStatus::Active,
+        "v2 multisig should be Active after deploy",
+    );
+    assert_eq!(
+        deployed.code_hash.as_deref(),
+        Some(UPDATE_CUSTODIAN_V2_CODE_HASH),
+        "the deployed account must be running v2's code, not the default build's",
+    );
 }

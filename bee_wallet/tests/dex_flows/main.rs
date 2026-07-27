@@ -19,6 +19,9 @@
 // `common/` is a shared helper module: each test uses a subset, so some
 // helpers are unused from any single flow's point of view.
 #![allow(dead_code)]
+// Native-only (heavy halo2 + dodex-sdk graph). Empty crate on wasm32 so
+// `wasm-pack test --tests` doesn't try to build it.
+#![cfg(not(target_arch = "wasm32"))]
 
 mod common;
 mod flows;
