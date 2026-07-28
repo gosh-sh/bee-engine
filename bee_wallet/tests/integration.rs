@@ -281,6 +281,7 @@ async fn deploy_fresh_wallet(wallet: &Wallet) -> DeployedWallet {
 
 /// Deploy a fresh wallet with enough ECC for DEX operations (voucher nominal =
 /// 100+).
+#[cfg(feature = "dex")]
 async fn deploy_fresh_wallet_for_dex(wallet: &Wallet) -> DeployedWallet {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let idx = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -4259,7 +4260,11 @@ async fn test_update_contract_flags() {
 // ============================================================
 // DEX voucher generation (bee_wallet responsibility)
 // ============================================================
+// Behind the `dex` feature: the voucher path needs `dodex-contracts`, which is
+// still on kit v4.0.1 while we are on v5.0.0 (see the feature's comment in
+// Cargo.toml).
 
+#[cfg(feature = "dex")]
 #[tokio::test]
 async fn test_generate_voucher_deposit() {
     let wallet = create_shellnet_wallet();
@@ -4279,6 +4284,7 @@ async fn test_generate_voucher_deposit() {
         .expect("generate_voucher (deposit NACKL)");
 }
 
+#[cfg(feature = "dex")]
 #[tokio::test]
 async fn test_generate_voucher_gas() {
     let wallet = create_shellnet_wallet();

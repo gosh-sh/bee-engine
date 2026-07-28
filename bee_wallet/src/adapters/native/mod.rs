@@ -443,6 +443,7 @@ impl Wallet {
 
     /// Generate a DEX voucher: adds RootPN to whitelist, then sends ECC tokens
     /// from the multifactor wallet to RootPN with `generatevoucher` payload.
+    #[cfg(feature = "dex")]
     pub async fn generate_voucher(
         &self,
         params: crate::modules::dex::ParamsOfGenerateVoucher,

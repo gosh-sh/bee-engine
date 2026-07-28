@@ -12,7 +12,7 @@
 pub(crate) mod balance;
 pub(crate) mod connect;
 pub(crate) mod deploy;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "dex"))]
 pub(crate) mod dex;
 pub(crate) mod history;
 pub(crate) mod miner;
