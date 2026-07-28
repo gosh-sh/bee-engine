@@ -216,38 +216,10 @@ struct GqlPageInfo {
 // ---------- GraphQL queries ----------
 
 /// ECC: all incoming and outgoing internal messages for multifactor account.
-/// Uses `last`/`before` to get newest messages first (reverse cursor
-/// pagination).
+/// Addresses the account by `account_id` + `dapp_id` (gql-server `>= 1.0.0`;
+/// the only form the kit speaks since v4). Uses `last`/`before` to get newest
+/// messages first (reverse cursor pagination).
 const GQL_ECC_QUERY: &str = r#"
-    query($address: String!, $last: Int!, $before: String) {
-      blockchain {
-        account(address: $address) {
-          messages(msg_type: [IntIn, IntOut], last: $last, before: $before) {
-            edges {
-              node {
-                id
-                src
-                dst
-                created_at
-                value_other {
-                  currency
-                  value(format: DEC)
-                }
-              }
-            }
-            pageInfo {
-              startCursor
-              hasPreviousPage
-            }
-          }
-        }
-      }
-    }
-"#;
-
-/// v3 (`>= 1.0.0`) form of [`GQL_ECC_QUERY`] — account by `account_id` +
-/// `dapp_id`.
-const GQL_ECC_QUERY_V3: &str = r#"
     query($account_id: String!, $dapp_id: String!, $last: Int!, $before: String) {
       blockchain {
         account(account_id: $account_id, dapp_id: $dapp_id) {
@@ -276,33 +248,9 @@ const GQL_ECC_QUERY_V3: &str = r#"
 
 /// Mining: RewardedPopitGame events emitted by GameRoot, filtered by dst =
 /// popitgame external address. Each event body contains `reward: uint128`.
-/// Uses `last`/`before` for reverse cursor pagination (newest first).
+/// Addresses the account by `account_id` + `dapp_id`. Uses `last`/`before` for
+/// reverse cursor pagination (newest first).
 const GQL_MINING_EVENTS_QUERY: &str = r#"
-    query($address: String!, $dst: String!, $last: Int!, $before: String) {
-      blockchain {
-        account(address: $address) {
-          events(dst: $dst, last: $last, before: $before) {
-            edges {
-              node {
-                msg_id
-                created_at
-                dst
-                body
-              }
-            }
-            pageInfo {
-              startCursor
-              hasPreviousPage
-            }
-          }
-        }
-      }
-    }
-"#;
-
-/// v3 (`>= 1.0.0`) form of [`GQL_MINING_EVENTS_QUERY`] — account by
-/// `account_id` + `dapp_id`.
-const GQL_MINING_EVENTS_QUERY_V3: &str = r#"
     query($account_id: String!, $dapp_id: String!, $dst: String!, $last: Int!, $before: String) {
       blockchain {
         account(account_id: $account_id, dapp_id: $dapp_id) {
@@ -334,27 +282,18 @@ async fn execute_gql_query(
     cursor: Option<&str>,
 ) -> crate::errors::AppResult<(Vec<EccMsg>, GqlPageInfo)> {
     // Multifactor account lives under the Mobile Verifiers dApp.
-    let v3 = crate::dapp::server_uses_dapp_id(tvm_client).await?;
     let dapp_id = ackinacki_kit::contracts::dapp::SystemDapp::MobileVerifiers.dapp_id();
-    let variables = if v3 {
-        json!({
-            "account_id": crate::dapp::account_id(address),
-            "dapp_id": dapp_id,
-            "last": page_size,
-            "before": cursor,
-        })
-    } else {
-        json!({
-            "address": address,
-            "last": page_size,
-            "before": cursor,
-        })
-    };
+    let variables = json!({
+        "account_id": crate::dapp::account_id(address),
+        "dapp_id": dapp_id,
+        "last": page_size,
+        "before": cursor,
+    });
 
     let result = ackinacki_kit::tvm_client::net::query(
         tvm_client.clone(),
         ackinacki_kit::tvm_client::net::ParamsOfQuery {
-            query: if v3 { GQL_ECC_QUERY_V3 } else { GQL_ECC_QUERY }.to_string(),
+            query: GQL_ECC_QUERY.to_string(),
             variables: Some(variables),
         },
     )
@@ -430,30 +369,19 @@ async fn execute_mining_events_query(
     let popitgame_ext_dst = popitgame_address.replacen("0:", ":", 1);
 
     // GameRoot lives under the Mobile Verifiers dApp.
-    let v3 = crate::dapp::server_uses_dapp_id(tvm_client).await?;
     let dapp_id = ackinacki_kit::contracts::dapp::SystemDapp::MobileVerifiers.dapp_id();
-    let variables = if v3 {
-        json!({
-            "account_id": crate::dapp::account_id(GAME_ROOT_ADDRESS),
-            "dapp_id": dapp_id,
-            "dst": popitgame_ext_dst,
-            "last": page_size,
-            "before": cursor,
-        })
-    } else {
-        json!({
-            "address": GAME_ROOT_ADDRESS,
-            "dst": popitgame_ext_dst,
-            "last": page_size,
-            "before": cursor,
-        })
-    };
+    let variables = json!({
+        "account_id": crate::dapp::account_id(GAME_ROOT_ADDRESS),
+        "dapp_id": dapp_id,
+        "dst": popitgame_ext_dst,
+        "last": page_size,
+        "before": cursor,
+    });
 
     let result = ackinacki_kit::tvm_client::net::query(
         tvm_client.clone(),
         ackinacki_kit::tvm_client::net::ParamsOfQuery {
-            query: if v3 { GQL_MINING_EVENTS_QUERY_V3 } else { GQL_MINING_EVENTS_QUERY }
-                .to_string(),
+            query: GQL_MINING_EVENTS_QUERY.to_string(),
             variables: Some(variables),
         },
     )

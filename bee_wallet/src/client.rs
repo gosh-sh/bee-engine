@@ -138,7 +138,7 @@ impl WalletClient {
         modules::names::NamesModule::new(&self.ctx)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dex"))]
     pub(crate) fn dex(&self) -> modules::dex::DexModule<'_> {
         modules::dex::DexModule::new(&self.ctx)
     }

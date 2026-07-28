@@ -612,20 +612,6 @@ async fn lenient_query_account_events(
     page_size: u32,
 ) -> Result<Vec<KitEvent>, String> {
     const GQL: &str = r#"
-        query($address: String!, $last: Int!, $before: String) {
-          blockchain {
-            account(address: $address) {
-              events(last: $last, before: $before) {
-                edges {
-                  cursor
-                  node { msg_id created_at dst body }
-                }
-              }
-            }
-          }
-        }
-    "#;
-    const GQL_V3: &str = r#"
         query($account_id: String!, $dapp_id: String!, $last: Int!, $before: String) {
           blockchain {
             account(account_id: $account_id, dapp_id: $dapp_id) {
@@ -641,29 +627,22 @@ async fn lenient_query_account_events(
     "#;
 
     // Diagnostic accounts queried here are mvsystem (Mobile Verifiers dApp).
-    let v3 = bee_wallet::dapp::server_uses_dapp_id(ctx).await.map_err(|e| e.to_string())?;
     let dapp_id = ackinacki_kit::contracts::dapp::SystemDapp::MobileVerifiers.dapp_id();
     let mut all = Vec::new();
     let before: Option<String> = None;
-    loop {
+    // Single page only (see the tail of this block) — a labeled block, not a
+    // `loop`, so the early exits read as what they are.
+    'page: {
         let raw = gql_query(
             ctx.clone(),
             GqlParams {
-                query: if v3 { GQL_V3 } else { GQL }.to_string(),
-                variables: Some(if v3 {
-                    serde_json::json!({
-                        "account_id": bee_wallet::dapp::account_id(address),
-                        "dapp_id": dapp_id,
-                        "last": page_size,
-                        "before": before,
-                    })
-                } else {
-                    serde_json::json!({
-                        "address": address,
-                        "last": page_size,
-                        "before": before,
-                    })
-                }),
+                query: GQL.to_string(),
+                variables: Some(serde_json::json!({
+                    "account_id": bee_wallet::dapp::account_id(address),
+                    "dapp_id": dapp_id,
+                    "last": page_size,
+                    "before": before,
+                })),
             },
         )
         .await
@@ -677,11 +656,11 @@ async fn lenient_query_account_events(
             .and_then(|v| v.get("account"))
             .and_then(|v| v.get("events"));
         let edges = match events {
-            None | Some(serde_json::Value::Null) => break,
+            None | Some(serde_json::Value::Null) => break 'page,
             Some(v) => v.get("edges").and_then(|e| e.as_array()).cloned().unwrap_or_default(),
         };
         if edges.is_empty() {
-            break;
+            break 'page;
         }
 
         let next_before = edges
@@ -703,7 +682,6 @@ async fn lenient_query_account_events(
         // Fetched a single page only — `limit` semantics in our caller mean
         // "give me up to this many"; one page covers it for our use case.
         let _ = next_before;
-        break;
     }
     Ok(all)
 }

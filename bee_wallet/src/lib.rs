@@ -65,7 +65,7 @@ pub use types::SendTokensReq;
 pub use types::UpdateMultifactorZkIdReq;
 pub use types::WithdrawPopitgameRewardsReq;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "dex"))]
 pub use crate::modules::dex::ParamsOfGenerateVoucher;
 pub use crate::modules::names::ResultOfValidateWalletName;
 pub use crate::modules::names::WalletNameErrorCode;

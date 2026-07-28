@@ -28,7 +28,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "3.2.0"
+version = "4.0.0"
 edition = "2024"
 license = "LicenseRef-Acki-Nacki-Node-License"
 license-file = "LICENSE.md"
@@ -40,6 +40,25 @@ hex = "0.4.3"
 rs_merkle = { version = "1.5.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Replicated from ackinacki-kit v5.0.0 (itself replicated from tvm-sdk v3.0.4.an).
+# Cargo `[patch]` tables only apply from the top-level workspace, so both tvm-sdk's
+# and the kit's own patches are ignored when they are consumed as git deps —
+# without these, tvm_vm's zk stack resolves TWO copies of halo2-axiom/halo2-base
+# (gosh-sh fork vs crates.io/axiom-crypto) and fails with E0277 Circuit<F> mismatches.
+[patch.crates-io]
+halo2-base = { git = "https://github.com/gosh-sh/halo2-lib-zkevm-sha256-and-bls12-381", branch = "bump-halo2-lib-v0.4.1" }
+halo2-axiom = { git = "https://github.com/gosh-sh/halo2-axiom", branch = "main" }
+
+[patch."https://github.com/axiom-crypto/halo2-lib.git"]
+halo2-base = { git = "https://github.com/gosh-sh/halo2-lib-zkevm-sha256-and-bls12-381", branch = "bump-halo2-lib-v0.4.1" }
+halo2-ecc = { git = "https://github.com/gosh-sh/halo2-lib-zkevm-sha256-and-bls12-381", branch = "bump-halo2-lib-v0.4.1" }
+zkevm-hashes = { git = "https://github.com/gosh-sh/halo2-lib-zkevm-sha256-and-bls12-381", branch = "bump-halo2-lib-v0.4.1" }
+
+# gosh-sh stable-Rust fork of axiom-eth; pinned by rev so the transitively selected
+# snark-verifier-sdk cannot drift (see tvm-sdk workspace Cargo.toml for details).
+[patch."https://github.com/axiom-crypto/axiom-eth"]
+axiom-eth = { git = "https://github.com/gosh-sh/axiom-eth", rev = "1d61be00a63ec73b3f709d74eb9e6b09b754b911" }
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

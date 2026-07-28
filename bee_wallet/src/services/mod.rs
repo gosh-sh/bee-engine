@@ -13,8 +13,9 @@ pub mod boost;
 pub mod connect;
 pub mod deploy;
 // DEX wrappers live in `dodex-contracts` (native-only dep); voucher generation
-// isn't exposed on wasm.
-#[cfg(not(target_arch = "wasm32"))]
+// isn't exposed on wasm. Behind the `dex` feature while dodex is a kit major
+// behind us — see the feature's comment in Cargo.toml.
+#[cfg(all(not(target_arch = "wasm32"), feature = "dex"))]
 pub mod dex;
 pub mod miner;
 pub mod multifactor;

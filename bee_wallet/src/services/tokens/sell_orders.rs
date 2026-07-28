@@ -66,25 +66,9 @@ fn sell_orders_retry_policy() -> bee_infra::RetryPolicy {
     }
 }
 
+/// Accumulator events by `dst`. Addresses the account by `account_id` +
+/// `dapp_id` (gql-server `>= 1.0.0`; the only form the kit speaks since v4).
 const GQL_EVENTS_BY_DST: &str = r#"
-    query($address: String!, $dst: String!, $last: Int!, $before: String) {
-      blockchain {
-        account(address: $address) {
-          events(dst: $dst, last: $last, before: $before) {
-            edges {
-              cursor
-              node { msg_id created_at dst body }
-            }
-            pageInfo { hasPreviousPage }
-          }
-        }
-      }
-    }
-"#;
-
-/// v3 (`>= 1.0.0`) form of [`GQL_EVENTS_BY_DST`] — addresses the accumulator by
-/// `account_id` + `dapp_id` instead of `address`.
-const GQL_EVENTS_BY_DST_V3: &str = r#"
     query($account_id: String!, $dapp_id: String!, $dst: String!, $last: Int!, $before: String) {
       blockchain {
         account(account_id: $account_id, dapp_id: $dapp_id) {
@@ -125,30 +109,18 @@ async fn fetch_events_one_endpoint(
     accumulator_addr: &str,
     dst: &str,
 ) -> AppResult<Vec<KitEvent>> {
-    // Pick the GraphQL wire form once (cached per-endpoint by the SDK). The
-    // accumulator lives under the Mobile Verifiers dApp; `dapp_id` is only
-    // consumed by `>= 1.0.0` servers but must be correct now.
-    let v3 = crate::dapp::server_uses_dapp_id(ctx).await?;
+    // The accumulator lives under the Mobile Verifiers dApp.
     let dapp_id = ackinacki_kit::contracts::dapp::SystemDapp::MobileVerifiers.dapp_id();
     let mut all = Vec::new();
     let mut before: Option<String> = None;
     for _ in 0..MAX_EVENT_PAGES {
-        let variables = if v3 {
-            json!({
-                "account_id": crate::dapp::account_id(accumulator_addr),
-                "dapp_id": dapp_id,
-                "dst": dst,
-                "last": EVENT_PAGE_SIZE,
-                "before": before,
-            })
-        } else {
-            json!({
-                "address": accumulator_addr,
-                "dst": dst,
-                "last": EVENT_PAGE_SIZE,
-                "before": before,
-            })
-        };
+        let variables = json!({
+            "account_id": crate::dapp::account_id(accumulator_addr),
+            "dapp_id": dapp_id,
+            "dst": dst,
+            "last": EVENT_PAGE_SIZE,
+            "before": before,
+        });
         let ctx_clone = ctx.clone();
         let result_value = bee_infra::with_retry_policy(
             &sell_orders_retry_policy(),
@@ -161,8 +133,7 @@ async fn fetch_events_one_endpoint(
                     gql_query(
                         ctx_clone,
                         GqlParams {
-                            query: if v3 { GQL_EVENTS_BY_DST_V3 } else { GQL_EVENTS_BY_DST }
-                                .to_string(),
+                            query: GQL_EVENTS_BY_DST.to_string(),
                             variables: Some(variables),
                         },
                     )
