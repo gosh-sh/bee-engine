@@ -849,11 +849,21 @@ mod multisig_code_selector_tests {
     fn params_from_js(
         code: wasm_bindgen::JsValue,
     ) -> Result<ParamsOfDeployMultisigViaGiver, String> {
+        params_from_js_with_balance(code, None)
+    }
+
+    fn params_from_js_with_balance(
+        code: wasm_bindgen::JsValue,
+        balance_config: Option<wasm_bindgen::JsValue>,
+    ) -> Result<ParamsOfDeployMultisigViaGiver, String> {
         let params = js_sys::Object::new();
         let endpoints = js_sys::Array::new();
         endpoints.push(&wasm_bindgen::JsValue::from_str("https://example.invalid"));
         js_sys::Reflect::set(&params, &"endpoints".into(), &endpoints).unwrap();
         js_sys::Reflect::set(&params, &"code".into(), &code).unwrap();
+        if let Some(balance_config) = balance_config {
+            js_sys::Reflect::set(&params, &"balance_config".into(), &balance_config).unwrap();
+        }
         serde_wasm_bindgen::from_value(params.into()).map_err(|e| format!("{e:?}"))
     }
 
@@ -867,7 +877,28 @@ mod multisig_code_selector_tests {
         let code = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
             .expect("named build must resolve");
         assert!(!code.tvc.is_empty());
-        assert!(code.abi.contains("submitUpdateCode"), "must be the v2 ABI");
+        assert!(code.abi.contains("submitUpdateCode"), "must be the v2.2 ABI");
+        assert!(!code.abi.contains("getBalanceConfig"), "legacy name must remain v2.2");
+    }
+
+    #[wasm_bindgen_test]
+    fn v2_4_build_and_balance_config_cross_the_js_boundary() {
+        let balance = js_sys::Object::new();
+        js_sys::Reflect::set(&balance, &"min_balance".into(), &"1000000000".into()).unwrap();
+        js_sys::Reflect::set(&balance, &"target_balance".into(), &"2000000000".into()).unwrap();
+
+        let params = params_from_js_with_balance(
+            wasm_bindgen::JsValue::from_str("update_custodian_v2_4"),
+            Some(balance.into()),
+        )
+        .expect("v2.4 params must deserialize");
+        let config = params.balance_config.expect("balance config");
+        assert_eq!(config.min_balance, "1000000000");
+        assert_eq!(config.target_balance, "2000000000");
+
+        let code = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
+            .expect("v2.4 build must resolve");
+        assert!(code.abi.contains("getBalanceConfig"), "must be the v2.4 ABI");
     }
 
     /// `code: { tvc_b64, abi }` with `abi` as an imported JS **object** — the

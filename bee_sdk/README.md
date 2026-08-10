@@ -107,7 +107,13 @@ await deploy_multisig_via_giver({ endpoints });
 // 2. A build vendored in the SDK, by name. No `.tvc` to ship from the frontend.
 await deploy_multisig_via_giver({
   endpoints,
-  code: "update_custodian_v2",   // UpdateCustodianMultisigWallet v2.1.0
+  code: "update_custodian_v2_4", // UpdateCustodianMultisigWallet v2.4.0
+  // Optional uint128 decimal strings. Omit (or pass 0/0) to disable automatic
+  // SHELL-to-vmshell conversion.
+  balance_config: {
+    min_balance: "1000000000",
+    target_balance: "2000000000",
+  },
 });
 
 // 3. Your own build.
@@ -123,7 +129,14 @@ Vendored builds:
 | `code` | contract | code hash |
 |---|---|---|
 | *(omitted)* | DexDo flat Multisig | — |
-| `"update_custodian_v2"` | `UpdateCustodianMultisigWallet` v2.1.0, `sold 0.81.0` | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
+| `"update_custodian_v2"` | legacy alias for v2.2.0 | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
+| `"update_custodian_v2_2"` | `UpdateCustodianMultisigWallet` v2.2.0, retained for recovery | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
+| `"update_custodian_v2_4"` | `UpdateCustodianMultisigWallet` v2.4.0, current deploy | `cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1` |
+
+Do not retarget the legacy `"update_custodian_v2"` name: contract code and ABI
+participate in deterministic address derivation, so changing that alias to v2.4
+would make existing v2.2 wallets resolve to a different address. New callers
+should always use the explicit versioned selector.
 
 In form 3, `tvc_b64` and `abi` are both required and must come from the *same*
 build: on ABI ≥ 2.3 the state-init data cell is rebuilt from the ABI's `fields`
@@ -133,6 +146,8 @@ Sending only one half is an error, not a default.
 
 The build is part of the address, so each one lands somewhere different — the
 returned `address` is always the one that was funded and deployed.
+`balance_config` is constructor input rather than StateInit, so changing it for
+the same v2.4 build and owner keys does not change the derived address.
 
 ### Multifactor wallet
 

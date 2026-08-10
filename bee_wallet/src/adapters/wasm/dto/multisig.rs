@@ -12,6 +12,9 @@ export type TParamsOfDeployMultisigViaGiver = {
     req_confirms?: number;
     req_confirms_data?: number;
     constructor_value?: string;
+    // v2.4 only. Omit to pass 0/0 and disable automatic SHELL-to-vmshell
+    // conversion. Decimal strings preserve the full uint128 range.
+    balance_config?: TMultisigBalanceConfig;
     giver_value?: string;
     // Map, NOT Record: serde on the Rust side deserializes a JS Map's numeric
     // keys into the u32 currency ids. A plain object/Record stringifies its keys
@@ -24,9 +27,17 @@ export type TParamsOfDeployMultisigViaGiver = {
 };
 
 // Builds vendored in this SDK, selectable by name — no need to ship a `.tvc`
-// from the frontend. "update_custodian_v2" is UpdateCustodianMultisigWallet
-// v2.1.0, code hash 09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded.
-export type TMultisigBuild = "update_custodian_v2";
+// from the frontend. The legacy selector remains an alias for v2.2 because
+// changing its bytes would silently change the deterministic wallet address.
+export type TMultisigBuild =
+    | "update_custodian_v2"
+    | "update_custodian_v2_2"
+    | "update_custodian_v2_4";
+
+export type TMultisigBalanceConfig = {
+    min_balance: string;
+    target_balance: string;
+};
 
 // Your own build. `tvc_b64` and `abi` are BOTH required: on ABI >= 2.3 the
 // state-init data cell is rebuilt from the ABI's `fields` list before the

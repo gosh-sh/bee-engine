@@ -1,11 +1,12 @@
 # Multisig assets — provenance
 
-Two builds are vendored here:
+Three builds are vendored here:
 
 | build | files | selected by | code hash |
 |---|---|---|---|
 | DexDo flat Multisig (**default**) | `Multisig.{tvc,abi.json}` | `code` omitted | `.tvc` sha256 `d3b38bca…` |
-| `UpdateCustodianMultisigWallet` v2.1.0 | `v2/UpdateCustodianMultisigWallet.{tvc,abi.json}` | `code: "update_custodian_v2"` | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
+| `UpdateCustodianMultisigWallet_v2` v2.2.0 (**legacy deploy**) | `v2_2/UpdateCustodianMultisigWallet.{tvc,abi.json}` | `code: "update_custodian_v2_2"` or legacy `"update_custodian_v2"` | `09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded` |
+| `UpdateCustodianMultisigWallet_v2` v2.4.0 (**new deploy**) | `v2_4/UpdateCustodianMultisigWallet.{tvc,abi.json}` | `code: "update_custodian_v2_4"` | `cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1` |
 
 A caller can also pass its own build as `code: { tvc_b64, abi }` — see
 "Any other build" below.
@@ -30,12 +31,12 @@ DexDo's build so addresses/code match what DexDo expects.
 
 Current `Multisig.tvc` sha256: d3b38bcac8f60c1274f6099fc1e75746c02a2ff22af4efc689a754fd087a86fb
 
-## `v2/` — UpdateCustodianMultisigWallet v2.1.0
+## `v2_2/` — UpdateCustodianMultisigWallet_v2 v2.2.0
 
 Vendored **verbatim** (not recompiled) from `gosh-sh/acki-nacki` branch `dev`,
 path `contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/` — the merged
-form of PR #2413 (`dev` commit `6ad89549a0b8`, "new Contracts/multisig (#2413)").
-Upstream names carry a `_v2` suffix that is redundant inside `v2/`, so they are
+form of PR #2413 (commit `6ad89549a0b845ed70094b24b23fad3223cdd5e8`).
+Upstream names carry a `_v2` suffix that is redundant inside `v2_2/`, so they are
 stored here without it; the git blob SHAs match upstream exactly:
 
     upstream UpdateCustodianMultisigWallet_v2.tvc       7150 B   blob 9610c471dce949f6ec84b096711cb7f43c78343b
@@ -55,15 +56,15 @@ To re-verify or refresh:
 
     gh api "repos/gosh-sh/acki-nacki/contents/contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2?ref=dev" \
       --jq '.[] | "\(.name) \(.sha)"'
-    git hash-object v2/UpdateCustodianMultisigWallet.tvc      # must match the blob above
+    git hash-object v2_2/UpdateCustodianMultisigWallet.tvc    # must match the blob above
 
 The code hash is read straight out of the `.tvc` with
 `tvm_client::boc::decode_state_init` (`code_hash` = repr hash of the state-init
 code cell) — the same value a node reports for a deployed account.
 
-The `.tvc` sha256 is pinned in a unit test (`vendored_v2_asset_is_pinned`) and the
-code hash is asserted on-chain by the integration tests, so a swapped file fails
-in CI rather than on a network.
+The `.tvc` and ABI sha256 values are pinned in unit tests and the code hash is
+decoded from the TVC there, so a swapped file fails in CI rather than on a
+network.
 
 Relative to the default build its ABI is a strict superset by function set: all
 17 functions identical (constructor included), plus `submitUpdateCode(cell,cell)
@@ -71,10 +72,43 @@ Relative to the default build its ABI is a strict superset by function set: all
 and `m_code` — which is why it must be deployed with its own ABI (see below).
 
 Verified on shellnet after the 2026-07-27 refresh, through
-`deploy_multisig_via_giver` with `code: "update_custodian_v2"`
-(`test_deploy_multisig_via_giver_update_custodian_v2`): account Active at
+`deploy_multisig_via_giver` with `code: "update_custodian_v2"`: account Active at
 `0480508b8bf07b3df8830ab758a61be0ee9b36427d9780466a66712277bb468c::…`, on-chain
 code hash `09f596d5…` as above.
+
+The v2.2 artifact remains available for deterministic address recovery and
+management of already-deployed wallets. It is not the build for new deployments.
+The legacy wire name is deliberately kept bound to these exact bytes: silently
+retargeting it to v2.4 would make the same keys resolve to a different address.
+
+## `v2_4/` — UpdateCustodianMultisigWallet_v2 v2.4.0
+
+Vendored **verbatim** (not recompiled) from immutable `gosh-sh/acki-nacki`
+commit `44fe02ea01e4bb31d431ed57d1f9b3dc3dd88a18`, path
+`contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/`. This is the
+canonical deployment artifact pinned by `dexdo-cli-private` on 2026-08-08.
+
+    upstream UpdateCustodianMultisigWallet_v2.tvc       10943 B  blob a9156bd2da0672a07a7dc02140c2ce5364015edc
+    upstream UpdateCustodianMultisigWallet_v2.abi.json  16885 B  blob 486e772a1d2238c587bdc9a33f78c5a66c3b8ba6
+
+    .abi sha256     e7573b233667cf50d8edc9ab0ce235f8ac88674ae9610c77d426bec22070f581
+    .tvc sha256     b0d72acbbdc6af309823e74b96b0b3ffb0f871a5b98316b6e89affdfb56c5c9d
+    code hash       cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1
+    contract        UpdateCustodianMultisigWallet_v2
+    getVersion      2.4.0
+    compiler        sol 0.81.0
+
+To re-verify the immutable source:
+
+    gh api "repos/gosh-sh/acki-nacki/contents/contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2?ref=44fe02ea01e4bb31d431ed57d1f9b3dc3dd88a18" \
+      --jq '.[] | "\(.name) \(.sha)"'
+    git hash-object v2_4/UpdateCustodianMultisigWallet.tvc
+
+Relative to v2.2, v2.4 adds lifecycle/getter coverage and gas self-management.
+Its constructor appends `minBalance` and `targetBalance`; `minBalance = 0`
+disables automatic SHELL-to-vmshell conversion. The two balance fields are part
+of the constructor call but not StateInit, so changing them does not change the
+derived address for fixed code, ABI and deploy key.
 
 ## Any other build
 
