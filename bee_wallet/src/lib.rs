@@ -103,7 +103,6 @@ pub use crate::services::multisig::ParamsOfDeployMultisigViaGiver;
 pub use crate::services::multisig::ParamsOfMultisigBalances;
 pub use crate::services::multisig::ParamsOfMultisigCode;
 pub use crate::services::multisig::ResultOfDeployMultisigViaGiver;
-pub use crate::services::multisig::UPDATE_CUSTODIAN_V2_2_CODE_HASH;
 pub use crate::services::multisig::UPDATE_CUSTODIAN_V2_4_CODE_HASH;
 pub use crate::services::transaction::history::ParamsOfGetHistory;
 pub use crate::services::zkp::ParamsOfAddZKPFactor;

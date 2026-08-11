@@ -4451,8 +4451,7 @@ async fn test_compute_multisig_address_deterministic() {
 ///
 /// 1. handing the vendored pair back explicitly lands on the very same address
 ///    (byte-faithful plumbing);
-/// 2. both UpdateCustodian generations move the address, and differ from one
-///    another;
+/// 2. the supported UpdateCustodian v2.4 build moves the address;
 /// 3. a different *ABI* moves it too: on ABI >= 2.3 the state-init data cell is
 ///    rebuilt from the ABI's `fields`, which is precisely why `MultisigCode`
 ///    pairs code with ABI instead of exposing two independent knobs;
@@ -4488,55 +4487,43 @@ async fn test_compute_multisig_address_honors_build_override() {
         .expect("compute address for explicit vendored override");
     assert_eq!(default_address, explicit, "the explicit vendored pair must match the default");
 
-    // 2. Both UpdateCustodian generations are distinct builds and therefore
-    // land at distinct addresses for the same owner keys.
-    let v2_2 = bee_wallet::MultisigCode::update_custodian_v2_2();
-    let v2_2_address = bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(v2_2.clone())))
-        .await
-        .expect("compute v2.2 address");
+    // 2. UpdateCustodian v2.4 is distinct from the default build and therefore
+    // lands at a distinct address for the same owner keys.
     let v2_4 = bee_wallet::MultisigCode::update_custodian_v2_4();
     let v2_4_address = bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(v2_4.clone())))
         .await
         .expect("compute v2.4 address");
-    assert_ne!(default_address, v2_2_address);
     assert_ne!(default_address, v2_4_address);
-    assert_ne!(v2_2_address, v2_4_address);
 
     // 3. v2's code with the *default* ABI derives yet another address — the
     // mismatch `MultisigCode` exists to prevent. v2's ABI is a strict superset by
     // function set, so if the ABI were only a calling convention these two would
     // agree; they don't, because its `fields` add `m_requestsMaskCode`/`m_code`
     // and `fields` rebuild the state-init data cell before it is hashed.
-    let mismatched = bee_wallet::MultisigCode { tvc: v2_2.tvc.clone(), abi: vendored_abi.clone() };
+    let mismatched = bee_wallet::MultisigCode { tvc: v2_4.tvc.clone(), abi: vendored_abi.clone() };
     let mismatched_address =
         bee_wallet::compute_multisig_address(ctx.clone(), &spec(Some(mismatched)))
             .await
             .expect("compute mismatched address");
     assert_ne!(
-        v2_2_address, mismatched_address,
+        v2_4_address, mismatched_address,
         "same code + another build's ABI must NOT resolve to the same address",
     );
 
-    // 4. Both vendored artifacts decode to the code hashes pinned by their
-    // respective releases.
-    for (code, expected_hash) in [
-        (v2_2, bee_wallet::UPDATE_CUSTODIAN_V2_2_CODE_HASH),
-        (v2_4, bee_wallet::UPDATE_CUSTODIAN_V2_4_CODE_HASH),
-    ] {
-        let decoded = ackinacki_kit::tvm_client::boc::decode_state_init(
-            ctx.clone(),
-            ackinacki_kit::tvm_client::boc::ParamsOfDecodeStateInit {
-                state_init: base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    &code.tvc,
-                ),
-                boc_cache: None,
-            },
-        )
-        .expect("decode UpdateCustodian state init");
-        assert_eq!(decoded.code_hash.as_deref(), Some(expected_hash));
-        assert_eq!(decoded.compiler_version.as_deref(), Some("sol 0.81.0"));
-    }
+    // 4. The vendored artifact decodes to the code hash pinned by its release.
+    let decoded = ackinacki_kit::tvm_client::boc::decode_state_init(
+        ctx.clone(),
+        ackinacki_kit::tvm_client::boc::ParamsOfDecodeStateInit {
+            state_init: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                &v2_4.tvc,
+            ),
+            boc_cache: None,
+        },
+    )
+    .expect("decode UpdateCustodian state init");
+    assert_eq!(decoded.code_hash.as_deref(), Some(bee_wallet::UPDATE_CUSTODIAN_V2_4_CODE_HASH));
+    assert_eq!(decoded.compiler_version.as_deref(), Some("sol 0.81.0"));
 
     // 5. Malformed override: refused locally, before any encode or send.
     let empty = bee_wallet::MultisigCode { tvc: Vec::new(), abi: vendored_abi };

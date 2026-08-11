@@ -19,8 +19,8 @@
 //! scope.
 //!
 //! That pair is the *default*, not a hard wiring: every brick takes its build
-//! from the spec ([`MultisigDeploySpec::code`]), so the default build, both
-//! supported `UpdateCustodianMultisigWallet` generations, and a caller's own
+//! from the spec ([`MultisigDeploySpec::code`]), so the default build, the
+//! supported `UpdateCustodianMultisigWallet` v2.4 build, and a caller's own
 //! (`code: { tvc_b64, abi }`) are deployable. A different build means a
 //! different derived address, which is why the override feeds brick 1 too, and
 //! why code and ABI travel together (see [`MultisigCode`]).
@@ -59,41 +59,23 @@ use crate::errors::AppResult;
 /// fully self-contained (the kit doesn't expose them publicly). This is the
 /// *default* build only — [`MultisigDeploySpec::code`] overrides it per deploy,
 /// so a caller can put a different build (e.g. `UpdateCustodianMultisigWallet`
-/// v2) on one network while the default stays put. See
+/// v2.4) on one network while the default stays put. See
 /// `assets/multisig/PROVENANCE.md`.
 const MULTISIG_ABI: &str = include_str!("../../assets/multisig/Multisig.abi.json");
 const MULTISIG_TVC: &[u8] = include_bytes!("../../assets/multisig/Multisig.tvc");
 
-/// Legacy v2.2 deployment artifact. It remains available because code and ABI
-/// participate in deterministic address derivation; removing or retargeting it
-/// would make existing wallets undiscoverable from the same keys.
-const UPDATE_CUSTODIAN_V2_2_ABI: &str =
-    include_str!("../../assets/multisig/v2_2/UpdateCustodianMultisigWallet.abi.json");
-const UPDATE_CUSTODIAN_V2_2_TVC: &[u8] =
-    include_bytes!("../../assets/multisig/v2_2/UpdateCustodianMultisigWallet.tvc");
-
-/// Canonical v2.4 artifact for new deployments, pinned to acki-nacki commit
+/// Canonical v2.4 artifact, pinned to acki-nacki commit
 /// `44fe02ea01e4bb31d431ed57d1f9b3dc3dd88a18`.
 const UPDATE_CUSTODIAN_V2_4_ABI: &str =
     include_str!("../../assets/multisig/v2_4/UpdateCustodianMultisigWallet.abi.json");
 const UPDATE_CUSTODIAN_V2_4_TVC: &[u8] =
     include_bytes!("../../assets/multisig/v2_4/UpdateCustodianMultisigWallet.tvc");
 
-const UPDATE_CUSTODIAN_V2_LEGACY_NAME: &str = "update_custodian_v2";
-const UPDATE_CUSTODIAN_V2_2_NAME: &str = "update_custodian_v2_2";
 const UPDATE_CUSTODIAN_V2_4_NAME: &str = "update_custodian_v2_4";
 
-pub const UPDATE_CUSTODIAN_V2_2_CODE_HASH: &str =
-    "09f596d5bb4f63d7f2b18020ee0b7c9e88114dc90010389cc594c67954655ded";
 pub const UPDATE_CUSTODIAN_V2_4_CODE_HASH: &str =
     "cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1";
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
-const UPDATE_CUSTODIAN_V2_2_ABI_SHA256: &str =
-    "28312c9773b1231623998a2d09d6285a8afc272e10af6b595bfabcddb320e45e";
-#[cfg(all(test, not(target_arch = "wasm32")))]
-const UPDATE_CUSTODIAN_V2_2_TVC_SHA256: &str =
-    "535e180e85ee019c23631c6046449fa2a5536d88f55b26d64e026d671e82d520";
 #[cfg(all(test, not(target_arch = "wasm32")))]
 const UPDATE_CUSTODIAN_V2_4_ABI_SHA256: &str =
     "e7573b233667cf50d8edc9ab0ce235f8ac88674ae9610c77d426bec22070f581";
@@ -151,7 +133,7 @@ const MAX_SEND_RPS: u32 = 2;
 /// `state_init.hash()`. So an ABI carries storage layout, not just a calling
 /// convention: pairing v1's ABI with v2's code yields a *different* address
 /// whose data cell the code does not agree with (measured against
-/// `UpdateCustodianMultisigWallet` v2.2.0, whose `fields` add
+/// `UpdateCustodianMultisigWallet` v2.4.0, whose `fields` add
 /// `m_requestsMaskCode` and `m_code`). Hence one struct.
 #[derive(Debug, Clone)]
 pub struct MultisigCode {
@@ -162,20 +144,7 @@ pub struct MultisigCode {
 }
 
 impl MultisigCode {
-    /// Legacy alias retained for source and address compatibility. New code
-    /// should select an explicit generation.
-    #[deprecated(note = "use update_custodian_v2_2 or update_custodian_v2_4 explicitly")]
-    pub fn update_custodian_v2() -> Self {
-        Self::update_custodian_v2_2()
-    }
-
-    /// `UpdateCustodianMultisigWallet_v2` v2.2.0. Kept for deterministic
-    /// recovery and management of existing deployments.
-    pub fn update_custodian_v2_2() -> Self {
-        Self { tvc: UPDATE_CUSTODIAN_V2_2_TVC.to_vec(), abi: UPDATE_CUSTODIAN_V2_2_ABI.to_string() }
-    }
-
-    /// Canonical `UpdateCustodianMultisigWallet_v2` v2.4.0 for new deployments.
+    /// Canonical `UpdateCustodianMultisigWallet_v2` v2.4.0.
     pub fn update_custodian_v2_4() -> Self {
         Self { tvc: UPDATE_CUSTODIAN_V2_4_TVC.to_vec(), abi: UPDATE_CUSTODIAN_V2_4_ABI.to_string() }
     }
@@ -183,13 +152,10 @@ impl MultisigCode {
     /// Resolves a vendored build by its wire name.
     fn by_name(name: &str) -> AppResult<Self> {
         match name {
-            UPDATE_CUSTODIAN_V2_LEGACY_NAME | UPDATE_CUSTODIAN_V2_2_NAME => {
-                Ok(Self::update_custodian_v2_2())
-            }
             UPDATE_CUSTODIAN_V2_4_NAME => Ok(Self::update_custodian_v2_4()),
             other => Err(AppError::new(format!(
                 "unknown multisig build `{other}` — vendored builds are \
-                 [{UPDATE_CUSTODIAN_V2_2_NAME}, {UPDATE_CUSTODIAN_V2_4_NAME}]; omit `code` \
+                 [{UPDATE_CUSTODIAN_V2_4_NAME}]; omit `code` \
                  for the default build, or pass `{{ tvc_b64, abi }}` for your own",
             ))),
         }
@@ -248,8 +214,8 @@ enum MultisigConstructorKind {
 ///
 /// `code` is the contract-build escape hatch: `None` deploys the vendored
 /// build, `Some` deploys whatever you hand it (e.g.
-/// `UpdateCustodianMultisigWallet` v2 on one network while another stays on the
-/// vendored one). It feeds address derivation too, so
+/// `UpdateCustodianMultisigWallet` v2.4 on one network while another stays on
+/// the vendored one). It feeds address derivation too, so
 /// [`compute_multisig_address`] and [`deploy_multisig`] always agree on the
 /// build the spec carries.
 #[derive(Debug, Clone)]
@@ -509,7 +475,8 @@ pub struct ParamsOfDeployMultisigViaGiver {
     #[serde(default)]
     pub constructor_value: Option<String>,
     /// v2.4 gas self-management settings (`uint128` decimal strings). Omit to
-    /// disable automatic conversion with `0/0`. Rejected by older builds.
+    /// disable automatic conversion with `0/0`. Rejected by base-constructor
+    /// builds.
     #[serde(default)]
     pub balance_config: Option<MultisigBalanceConfig>,
     /// SHELL-ECC funding of the future address via the flag-16 creation
@@ -526,8 +493,7 @@ pub struct ParamsOfDeployMultisigViaGiver {
     pub wait_for_active: Option<bool>,
     /// Build override: a vendored build's explicit name (for example,
     /// `"update_custodian_v2_4"`) or your own `{ tvc_b64, abi }`. Absent → the
-    /// default vendored build. The legacy `"update_custodian_v2"` selector
-    /// remains bound to v2.2 for deterministic address compatibility.
+    /// default vendored build.
     #[serde(default)]
     pub code: Option<ParamsOfMultisigCode>,
 }
@@ -1048,28 +1014,20 @@ mod tests {
         assert!(error(json!(42)).contains("must be a vendored build's name"));
     }
 
-    /// Both vendored UpdateCustodian generations are immutable inputs to
-    /// address derivation. Pin ABI, TVC and the decoded code cell before
-    /// they can reach a network.
+    /// The vendored UpdateCustodian build is an immutable input to address
+    /// derivation. Pin ABI, TVC and the decoded code cell before it can reach a
+    /// network.
     #[test]
     fn vendored_update_custodian_assets_are_pinned() {
         use sha2::Digest;
 
         let ctx = Arc::new(ClientContext::new(ClientConfig::default()).expect("client context"));
-        let cases = [
-            (
-                MultisigCode::update_custodian_v2_2(),
-                UPDATE_CUSTODIAN_V2_2_ABI_SHA256,
-                UPDATE_CUSTODIAN_V2_2_TVC_SHA256,
-                UPDATE_CUSTODIAN_V2_2_CODE_HASH,
-            ),
-            (
-                MultisigCode::update_custodian_v2_4(),
-                UPDATE_CUSTODIAN_V2_4_ABI_SHA256,
-                UPDATE_CUSTODIAN_V2_4_TVC_SHA256,
-                UPDATE_CUSTODIAN_V2_4_CODE_HASH,
-            ),
-        ];
+        let cases = [(
+            MultisigCode::update_custodian_v2_4(),
+            UPDATE_CUSTODIAN_V2_4_ABI_SHA256,
+            UPDATE_CUSTODIAN_V2_4_TVC_SHA256,
+            UPDATE_CUSTODIAN_V2_4_CODE_HASH,
+        )];
 
         for (code, abi_sha256, tvc_sha256, code_hash) in cases {
             assert_eq!(hex::encode(sha2::Sha256::digest(code.abi.as_bytes())), abi_sha256);
@@ -1089,29 +1047,22 @@ mod tests {
         }
     }
 
-    /// The legacy selector must stay byte-for-byte bound to v2.2. Retargeting
-    /// it to v2.4 would silently change every derived address after an SDK
-    /// update.
     #[test]
-    fn named_builds_resolve_without_retargeting_the_legacy_name() {
+    fn only_the_explicit_v2_4_named_build_is_supported() {
         let resolve = |name| {
             let named: ParamsOfMultisigCode = serde_json::from_value(json!(name)).unwrap();
-            MultisigCode::try_from(named).expect("named build must resolve")
+            MultisigCode::try_from(named)
         };
 
-        let legacy = resolve(UPDATE_CUSTODIAN_V2_LEGACY_NAME);
-        let v2_2 = resolve(UPDATE_CUSTODIAN_V2_2_NAME);
-        let v2_4 = resolve(UPDATE_CUSTODIAN_V2_4_NAME);
-        assert_eq!(legacy.tvc, v2_2.tvc);
-        assert_eq!(legacy.abi, v2_2.abi);
-        assert_ne!(v2_2.tvc, v2_4.tvc);
-        assert_ne!(v2_2.abi, v2_4.abi);
+        let v2_4 = resolve(UPDATE_CUSTODIAN_V2_4_NAME).expect("v2.4 must resolve");
+        assert_eq!(v2_4.tvc, UPDATE_CUSTODIAN_V2_4_TVC);
+        assert_eq!(v2_4.abi, UPDATE_CUSTODIAN_V2_4_ABI);
 
-        let unknown: ParamsOfMultisigCode = serde_json::from_value(json!("v3")).unwrap();
-        let message = MultisigCode::try_from(unknown).unwrap_err().message;
-        assert!(message.contains("unknown multisig build `v3`"), "got: {message}");
-        assert!(message.contains(UPDATE_CUSTODIAN_V2_2_NAME), "must list v2.2: {message}");
-        assert!(message.contains(UPDATE_CUSTODIAN_V2_4_NAME), "must list v2.4: {message}");
+        for removed in ["update_custodian_v2", "update_custodian_v2_2", "v3"] {
+            let message = resolve(removed).unwrap_err().message;
+            assert!(message.contains(&format!("unknown multisig build `{removed}`")));
+            assert!(message.contains(UPDATE_CUSTODIAN_V2_4_NAME), "got: {message}");
+        }
     }
 
     #[test]
@@ -1134,12 +1085,12 @@ mod tests {
 
     #[test]
     fn balance_config_is_validated_against_the_selected_constructor() {
-        let mut legacy = spec_with(Some(MultisigCode::update_custodian_v2_2()));
-        legacy.balance_config = Some(MultisigBalanceConfig {
+        let mut default_build = spec_with(None);
+        default_build.balance_config = Some(MultisigBalanceConfig {
             min_balance: "1".to_string(),
             target_balance: "2".to_string(),
         });
-        let message = legacy.validate().unwrap_err().message;
+        let message = default_build.validate().unwrap_err().message;
         assert!(message.contains("does not accept `balance_config`"), "got: {message}");
 
         let mut inverted = spec_with(Some(MultisigCode::update_custodian_v2_4()));
@@ -1200,7 +1151,7 @@ mod tests {
                 .collect()
         };
 
-        let (default_fns, v2_fns) = (names(MULTISIG_ABI), names(UPDATE_CUSTODIAN_V2_2_ABI));
+        let (default_fns, v2_fns) = (names(MULTISIG_ABI), names(UPDATE_CUSTODIAN_V2_4_ABI));
         for name in &default_fns {
             assert!(v2_fns.contains(name), "v2 must keep `{name}`");
         }
@@ -1209,7 +1160,7 @@ mod tests {
             assert!(!default_fns.contains(&added.to_string()));
         }
 
-        let (default_fields, v2_fields) = (fields(MULTISIG_ABI), fields(UPDATE_CUSTODIAN_V2_2_ABI));
+        let (default_fields, v2_fields) = (fields(MULTISIG_ABI), fields(UPDATE_CUSTODIAN_V2_4_ABI));
         for added in ["m_requestsMaskCode", "m_code"] {
             assert!(v2_fields.contains(&added.to_string()), "v2 must add field `{added}`");
             assert!(!default_fields.contains(&added.to_string()));

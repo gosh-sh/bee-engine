@@ -26,13 +26,9 @@ export type TParamsOfDeployMultisigViaGiver = {
     code?: TMultisigBuild | TMultisigCode;
 };
 
-// Builds vendored in this SDK, selectable by name — no need to ship a `.tvc`
-// from the frontend. The legacy selector remains an alias for v2.2 because
-// changing its bytes would silently change the deterministic wallet address.
-export type TMultisigBuild =
-    | "update_custodian_v2"
-    | "update_custodian_v2_2"
-    | "update_custodian_v2_4";
+// Build vendored in this SDK, selectable by name — no need to ship a `.tvc`
+// from the frontend.
+export type TMultisigBuild = "update_custodian_v2_4";
 
 export type TMultisigBalanceConfig = {
     min_balance: string;

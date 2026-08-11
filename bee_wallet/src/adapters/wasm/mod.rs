@@ -867,18 +867,15 @@ mod multisig_code_selector_tests {
         serde_wasm_bindgen::from_value(params.into()).map_err(|e| format!("{e:?}"))
     }
 
-    /// `code: "update_custodian_v2"` — a plain JS string must select the
-    /// vendored build (serde_wasm_bindgen routes strings through
-    /// `deserialize_any`).
+    /// Removed build selectors must fail instead of silently changing their
+    /// deterministic address.
     #[wasm_bindgen_test]
-    fn named_build_arrives_as_a_js_string() {
+    fn removed_named_build_is_rejected() {
         let params = params_from_js(wasm_bindgen::JsValue::from_str("update_custodian_v2"))
             .expect("named build must deserialize");
-        let code = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
-            .expect("named build must resolve");
-        assert!(!code.tvc.is_empty());
-        assert!(code.abi.contains("submitUpdateCode"), "must be the v2.2 ABI");
-        assert!(!code.abi.contains("getBalanceConfig"), "legacy name must remain v2.2");
+        let error = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
+            .expect_err("removed build must not resolve");
+        assert!(error.message.contains("unknown multisig build `update_custodian_v2`"));
     }
 
     #[wasm_bindgen_test]
