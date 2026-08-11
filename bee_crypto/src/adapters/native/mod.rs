@@ -111,18 +111,23 @@ impl Crypto {
         Ok(dto::crypto::ResultOfGetKeys::from(key_pair))
     }
 
-    /// Generates a 24-word mnemonic phrase and derives owner keys from it.
-    pub fn gen_mnemonic_and_derive_keys(&self) -> AppResult<dto::crypto::ResultOfGenSeedAndKeys> {
-        let res = self.inner.gen_mnemonic_and_derive_keys()?;
+    /// Generates a mnemonic with the requested word count and derives owner
+    /// keys from it.
+    pub fn gen_mnemonic_and_derive_keys(
+        &self,
+        word_count: u8,
+    ) -> AppResult<dto::crypto::ResultOfGenSeedAndKeys> {
+        let res = self.inner.gen_mnemonic_and_derive_keys(word_count)?;
         Ok(dto::crypto::ResultOfGenSeedAndKeys::from(res))
     }
 
-    /// Derives owner keys from a mnemonic phrase.
+    /// Derives owner keys using the requested mnemonic word count.
     pub fn get_keys_from_mnemonic(
         &self,
         phrase: String,
+        word_count: u8,
     ) -> AppResult<dto::crypto::ResultOfGetKeys> {
-        let res = self.inner.get_keys_from_mnemonic(phrase)?;
+        let res = self.inner.get_keys_from_mnemonic(phrase, word_count)?;
         Ok(dto::crypto::ResultOfGetKeys::from(res))
     }
 
@@ -134,14 +139,15 @@ impl Crypto {
         &self,
         phrase: String,
         path: String,
+        word_count: u8,
     ) -> AppResult<dto::crypto::ResultOfGetKeys> {
-        let res = self.inner.get_keys_from_mnemonic_with_path(phrase, path)?;
+        let res = self.inner.get_keys_from_mnemonic_with_path(phrase, path, word_count)?;
         Ok(dto::crypto::ResultOfGetKeys::from(res))
     }
 
-    /// Verifies mnemonic phrase checksum and format.
-    pub fn verify_mnemonic(&self, phrase: String) -> AppResult<bool> {
-        self.inner.verify_mnemonic(phrase)
+    /// Verifies mnemonic checksum, format, and the requested word count.
+    pub fn verify_mnemonic(&self, phrase: String, word_count: u8) -> AppResult<bool> {
+        self.inner.verify_mnemonic(phrase, word_count)
     }
 
     /// Returns the full BIP39 dictionary used by mnemonic utilities.

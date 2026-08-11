@@ -129,28 +129,31 @@ impl Crypto {
         Ok(dto::crypto::CryptoResultOfGetKeys::from(key_pair))
     }
 
-    /// Generates 24-word mnemonic and derives keys from it.
+    /// Generates a mnemonic with the requested word count and derives keys from
+    /// it.
     #[wasm_bindgen(js_name = gen_mnemonic_and_derive_keys)]
     pub async fn gen_mnemonic_and_derive_keys(
         &self,
+        word_count: u8,
     ) -> Result<dto::crypto::CryptoResultOfGenSeedAndKeys, JsError> {
         let res = self
             .inner
-            .gen_mnemonic_and_derive_keys()
+            .gen_mnemonic_and_derive_keys(word_count)
             .map_err(|e| JsError::new(&format!("failed to gen mnemonic and derive keys: {e:?}")))?;
 
         Ok(dto::crypto::CryptoResultOfGenSeedAndKeys::from(res))
     }
 
-    /// Derives keys from a mnemonic phrase.
+    /// Derives keys using the requested mnemonic word count.
     #[wasm_bindgen(js_name = get_keys_from_mnemonic)]
     pub async fn get_keys_from_mnemonic(
         &self,
         phrase: String,
+        word_count: u8,
     ) -> Result<dto::crypto::CryptoResultOfGetKeys, JsError> {
         let res = self
             .inner
-            .get_keys_from_mnemonic(phrase)
+            .get_keys_from_mnemonic(phrase, word_count)
             .map_err(|e| JsError::new(&format!("failed to derive keys from mnemonic: {e:?}")))?;
 
         Ok(dto::crypto::CryptoResultOfGetKeys::from(res))
@@ -162,21 +165,22 @@ impl Crypto {
         &self,
         phrase: String,
         path: String,
+        word_count: u8,
     ) -> Result<dto::crypto::CryptoResultOfGetKeys, JsError> {
         let res = self
             .inner
-            .get_keys_from_mnemonic_with_path(phrase, path)
+            .get_keys_from_mnemonic_with_path(phrase, path, word_count)
             .map_err(|e| JsError::new(&format!("failed to derive keys with path: {e:?}")))?;
 
         Ok(dto::crypto::CryptoResultOfGetKeys::from(res))
     }
 
-    /// Verifies mnemonic checksum and format.
+    /// Verifies mnemonic checksum, format, and the requested word count.
     #[wasm_bindgen(js_name = verify_mnemonic)]
-    pub async fn verify_mnemonic(&self, phrase: String) -> Result<bool, JsError> {
+    pub async fn verify_mnemonic(&self, phrase: String, word_count: u8) -> Result<bool, JsError> {
         Ok(self
             .inner
-            .verify_mnemonic(phrase)
+            .verify_mnemonic(phrase, word_count)
             .map_err(|e| JsError::new(&format!("failed to verify mnemonic: {e:?}")))?)
     }
 }

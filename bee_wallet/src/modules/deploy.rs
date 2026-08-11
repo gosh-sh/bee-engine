@@ -99,7 +99,7 @@ impl<'a> DeployModule<'a> {
 
         let crypto = BeeCrypto::from_client_context(self.ctx.tvm_client.clone());
         let generated = crypto
-            .gen_mnemonic_and_derive_keys()
+            .gen_mnemonic_and_derive_keys(24)
             .map_err(|e| e.with_context("Failed to gen seed"))?;
         let phrase = generated.phrase;
         let owner_keys = KeyPair {

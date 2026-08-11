@@ -117,28 +117,42 @@ impl CryptoClient {
     }
 
     pub(crate) fn gen_mining_keys(&self) -> AppResult<KeyPair> {
-        let res = services::gen_mnemonic_and_derive_keys(self.ctx.tvm_client.clone(), 12)?;
+        let res = self.gen_mnemonic_and_derive_keys(12)?;
         Ok(res.1)
     }
 
-    pub(crate) fn gen_mnemonic_and_derive_keys(&self) -> AppResult<(String, KeyPair)> {
-        services::gen_mnemonic_and_derive_keys(self.ctx.tvm_client.clone(), 24)
+    pub(crate) fn gen_mnemonic_and_derive_keys(
+        &self,
+        word_count: u8,
+    ) -> AppResult<(String, KeyPair)> {
+        services::gen_mnemonic_and_derive_keys(self.ctx.tvm_client.clone(), word_count)
     }
 
-    pub(crate) fn get_keys_from_mnemonic(&self, phrase: String) -> AppResult<KeyPair> {
-        services::derive_keys_from_mnemonic(self.ctx.tvm_client.clone(), phrase)
+    pub(crate) fn get_keys_from_mnemonic(
+        &self,
+        phrase: String,
+        word_count: u8,
+    ) -> AppResult<KeyPair> {
+        services::derive_keys_from_mnemonic(self.ctx.tvm_client.clone(), phrase, word_count)
     }
 
     pub(crate) fn get_keys_from_mnemonic_with_path(
         &self,
         phrase: String,
         path: String,
+        word_count: u8,
     ) -> AppResult<KeyPair> {
-        services::derive_keys_from_mnemonic_with_path(self.ctx.tvm_client.clone(), phrase, path)
+        services::derive_keys_from_mnemonic_with_path(
+            self.ctx.tvm_client.clone(),
+            phrase,
+            path,
+            word_count,
+        )
     }
 
-    pub(crate) fn verify_mnemonic(&self, phrase: String) -> AppResult<bool> {
-        services::verify_mnemonic(self.ctx.tvm_client.clone(), phrase)
+    pub(crate) fn verify_mnemonic(&self, phrase: String, word_count: u8) -> AppResult<bool> {
+        services::validate_phrase_word_count(&phrase, word_count)?;
+        services::verify_mnemonic(self.ctx.tvm_client.clone(), phrase, word_count)
     }
 
     pub(crate) fn mnemonic_words(&self) -> AppResult<String> {

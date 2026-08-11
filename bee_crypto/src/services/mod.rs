@@ -18,6 +18,7 @@ pub use mnemonic::derive_keys_from_mnemonic;
 pub use mnemonic::derive_keys_from_mnemonic_with_path;
 pub use mnemonic::gen_mnemonic_and_derive_keys;
 pub use mnemonic::mnemonic_words;
+pub(crate) use mnemonic::validate_phrase_word_count;
 pub use mnemonic::verify_mnemonic;
 pub use signature::sign;
 pub use signature::sign_detached_hex;

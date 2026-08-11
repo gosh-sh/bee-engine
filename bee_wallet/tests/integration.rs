@@ -2005,7 +2005,7 @@ async fn test_update_zk_id() {
     println!("deployed wallet: {} ({})", name, addr);
 
     let owner_keys = create_crypto()
-        .get_keys_from_mnemonic(deploy_result.phrase.clone())
+        .get_keys_from_mnemonic(deploy_result.phrase.clone(), 24)
         .expect("get_keys_from_mnemonic failed");
 
     let info_before = wallet
@@ -2323,7 +2323,7 @@ async fn test_deploy_wallet_and_change_seed_phrase() {
     let signer_keys = KeyPair { public: epk, secret: esk };
 
     // 2. Generate a new seed phrase → derive new owner keys
-    let new_seed = create_crypto().gen_mnemonic_and_derive_keys().expect("gen_mnemonic failed");
+    let new_seed = create_crypto().gen_mnemonic_and_derive_keys(24).expect("gen_mnemonic failed");
     let new_owner_keys =
         KeyPair { public: new_seed.keys.public.clone(), secret: new_seed.keys.secret.clone() };
     println!("new owner_pubkey: {}", new_owner_keys.public);
@@ -3284,7 +3284,7 @@ async fn test_prepare_multifactor_deploy_params() {
     let wallet = create_shellnet_wallet();
     let deploy_params = create_deploy_wallet_params(format!("prep_deploy_{}", now_secs()));
 
-    let owner_keys = create_crypto().gen_mnemonic_and_derive_keys().expect("gen_mnemonic failed");
+    let owner_keys = create_crypto().gen_mnemonic_and_derive_keys(24).expect("gen_mnemonic failed");
 
     let result = wallet
         .prepare_multifactor_deploy_params(ParamsOfPrepareDeploy {
@@ -4211,7 +4211,7 @@ async fn test_update_contract_flags() {
     println!("[3/5] deriving owner keys from phrase...");
     let crypto = create_crypto();
     let derived = crypto
-        .get_keys_from_mnemonic(deploy_result.phrase.clone())
+        .get_keys_from_mnemonic(deploy_result.phrase.clone(), 24)
         .expect("derive keys from phrase");
     let owner_keys = KeyPair { public: derived.public.clone(), secret: derived.secret.clone() };
     println!("  owner pubkey:    {}", owner_keys.public);

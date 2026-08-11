@@ -43,6 +43,30 @@ let crypto = Crypto::from_client_context(tvm);
 # Ok::<(), bee_crypto::errors::AppError>(())
 ```
 
+### Mnemonic word counts
+
+Mnemonic methods require an explicit BIP39 word count. Pass `24` to preserve
+the historical wallet-seed behavior or another supported length when needed:
+
+```rust,no_run
+use bee_crypto::Crypto;
+
+let crypto = Crypto::new(vec!["mainnet.ackinacki.org".to_string()])?;
+let generated = crypto.gen_mnemonic_and_derive_keys(12)?;
+assert!(crypto.verify_mnemonic(generated.phrase.clone(), 12)?);
+
+let keys = crypto.get_keys_from_mnemonic_with_path(
+    generated.phrase,
+    "m/44'/1331'/0'/1/0".to_string(),
+    12,
+)?;
+assert!(!keys.public.is_empty());
+# Ok::<(), bee_crypto::errors::AppError>(())
+```
+
+Passing a `word_count` that does not match the phrase returns an error before
+key derivation.
+
 ## Wasm Usage (JS/TS)
 
 ```ts
