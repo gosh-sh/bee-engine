@@ -10,7 +10,9 @@
 				{"name":"owners_address","type":"address[]"},
 				{"name":"reqConfirms","type":"uint8"},
 				{"name":"reqConfirmsData","type":"uint8"},
-				{"name":"value","type":"uint64"}
+				{"name":"value","type":"uint64"},
+				{"name":"minBalance","type":"uint128"},
+				{"name":"targetBalance","type":"uint128"}
 			],
 			"outputs": [
 			]
@@ -82,6 +84,42 @@
 			]
 		},
 		{
+			"name": "submitUpdateCode",
+			"inputs": [
+				{"name":"newcode","type":"cell"},
+				{"name":"cell","type":"cell"}
+			],
+			"outputs": [
+				{"name":"codeUpdateId","type":"uint64"}
+			]
+		},
+		{
+			"name": "confirmUpdateCode",
+			"inputs": [
+				{"name":"codeUpdateId","type":"uint64"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "submitConfigUpdate",
+			"inputs": [
+				{"name":"minBalance","type":"uint128"},
+				{"name":"targetBalance","type":"uint128"}
+			],
+			"outputs": [
+				{"name":"configUpdateId","type":"uint64"}
+			]
+		},
+		{
+			"name": "confirmConfigUpdate",
+			"inputs": [
+				{"name":"configUpdateId","type":"uint64"}
+			],
+			"outputs": [
+			]
+		},
+		{
 			"name": "isConfirmed",
 			"inputs": [
 				{"name":"mask","type":"uint32"},
@@ -101,6 +139,14 @@
 				{"name":"expirationTime","type":"uint64"},
 				{"name":"requiredTxnConfirms","type":"uint8"},
 				{"name":"requiredDataConfirms","type":"uint8"}
+			]
+		},
+		{
+			"name": "getMaxCleanupOperations",
+			"inputs": [
+			],
+			"outputs": [
+				{"name":"maxCleanupOperations","type":"uint256"}
 			]
 		},
 		{
@@ -138,6 +184,14 @@
 			]
 		},
 		{
+			"name": "getUpdateDataIds",
+			"inputs": [
+			],
+			"outputs": [
+				{"name":"ids","type":"uint64[]"}
+			]
+		},
+		{
 			"name": "getTransactionIds",
 			"inputs": [
 			],
@@ -146,7 +200,57 @@
 			]
 		},
 		{
+			"name": "getUpdateCode",
+			"inputs": [
+				{"name":"codeUpdateId","type":"uint64"}
+			],
+			"outputs": [
+				{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"name":"newcode","type":"cell"},{"name":"cell","type":"cell"}],"name":"codeUpdate","type":"tuple"}
+			]
+		},
+		{
+			"name": "getUpdateCodes",
+			"inputs": [
+			],
+			"outputs": [
+				{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"name":"creatorIndex","type":"uint8"},{"name":"codeHash","type":"uint256"},{"name":"cellHash","type":"uint256"}],"name":"codeUpdates","type":"tuple[]"}
+			]
+		},
+		{
 			"name": "getUpdateCodeIds",
+			"inputs": [
+			],
+			"outputs": [
+				{"name":"ids","type":"uint64[]"}
+			]
+		},
+		{
+			"name": "getBalanceConfig",
+			"inputs": [
+			],
+			"outputs": [
+				{"components":[{"name":"minBalance","type":"uint128"},{"name":"targetBalance","type":"uint128"}],"name":"config","type":"tuple"}
+			]
+		},
+		{
+			"name": "getConfigUpdate",
+			"inputs": [
+				{"name":"configUpdateId","type":"uint64"}
+			],
+			"outputs": [
+				{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"components":[{"name":"minBalance","type":"uint128"},{"name":"targetBalance","type":"uint128"}],"name":"config","type":"tuple"}],"name":"configUpdate","type":"tuple"}
+			]
+		},
+		{
+			"name": "getConfigUpdates",
+			"inputs": [
+			],
+			"outputs": [
+				{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"components":[{"name":"minBalance","type":"uint128"},{"name":"targetBalance","type":"uint128"}],"name":"config","type":"tuple"}],"name":"configUpdates","type":"tuple[]"}
+			]
+		},
+		{
+			"name": "getConfigUpdateIds",
 			"inputs": [
 			],
 			"outputs": [
@@ -173,9 +277,166 @@
 	],
 	"events": [
 		{
-			"name": "TransferAccepted",
+			"name": "TransactionSent",
 			"inputs": [
-				{"name":"payload","type":"bytes"}
+				{"name":"transactionId","type":"uint64"},
+				{"name":"dest","type":"address"},
+				{"name":"value","type":"uint128"},
+				{"name":"cc","type":"map(uint32,varuint32)"},
+				{"name":"sendFlags","type":"uint16"},
+				{"name":"bounce","type":"bool"},
+				{"name":"dapp_id","type":"uint256"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "TransactionSubmitted",
+			"inputs": [
+				{"name":"transactionId","type":"uint64"},
+				{"name":"creatorIndex","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"},
+				{"name":"dest","type":"address"},
+				{"name":"value","type":"uint128"},
+				{"name":"dapp_id","type":"uint256"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "TransactionConfirmed",
+			"inputs": [
+				{"name":"transactionId","type":"uint64"},
+				{"name":"custodianIndex","type":"uint8"},
+				{"name":"signsReceived","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "CustodiansUpdated",
+			"inputs": [
+				{"name":"custodianCount","type":"uint8"},
+				{"name":"reqConfirms","type":"uint8"},
+				{"name":"reqConfirmsData","type":"uint8"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "RequestsDropped",
+			"inputs": [
+				{"name":"transfers","type":"uint32"},
+				{"name":"dataUpdates","type":"uint32"},
+				{"name":"codeUpdates","type":"uint32"},
+				{"name":"configUpdates","type":"uint32"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "CodeUpdateSubmitted",
+			"inputs": [
+				{"name":"codeUpdateId","type":"uint64"},
+				{"name":"creatorIndex","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"},
+				{"name":"codeHash","type":"uint256"},
+				{"name":"cellHash","type":"uint256"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "CodeUpdateConfirmed",
+			"inputs": [
+				{"name":"codeUpdateId","type":"uint64"},
+				{"name":"custodianIndex","type":"uint8"},
+				{"name":"signsReceived","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "CodeUpdateApplied",
+			"inputs": [
+				{"name":"codeUpdateId","type":"uint64"},
+				{"name":"codeHash","type":"uint256"},
+				{"name":"cellHash","type":"uint256"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "ConfigUpdateSubmitted",
+			"inputs": [
+				{"name":"configUpdateId","type":"uint64"},
+				{"name":"creatorIndex","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"},
+				{"name":"minBalance","type":"uint128"},
+				{"name":"targetBalance","type":"uint128"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "ConfigUpdateConfirmed",
+			"inputs": [
+				{"name":"configUpdateId","type":"uint64"},
+				{"name":"custodianIndex","type":"uint8"},
+				{"name":"signsReceived","type":"uint8"},
+				{"name":"signsRequired","type":"uint8"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "ConfigUpdateApplied",
+			"inputs": [
+				{"name":"configUpdateId","type":"uint64"},
+				{"name":"minBalance","type":"uint128"},
+				{"name":"targetBalance","type":"uint128"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "FundsReceived",
+			"inputs": [
+				{"name":"sender","type":"address"},
+				{"name":"value","type":"uint128"},
+				{"name":"cc","type":"map(uint32,varuint32)"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "UnknownCall",
+			"inputs": [
+				{"name":"sender","type":"address"},
+				{"name":"value","type":"uint128"},
+				{"name":"cc","type":"map(uint32,varuint32)"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "WalletSetup",
+			"inputs": [
+				{"name":"custodianCount","type":"uint8"},
+				{"name":"reqConfirms","type":"uint8"},
+				{"name":"reqConfirmsData","type":"uint8"}
+			],
+			"outputs": [
+			]
+		},
+		{
+			"name": "ExecutionFailure",
+			"inputs": [
+				{"name":"dest","type":"address"},
+				{"name":"value","type":"uint128"},
+				{"name":"bouncedFunctionId","type":"uint32"}
 			],
 			"outputs": [
 			]
@@ -189,8 +450,13 @@
 		{"init":false,"name":"m_ownerAddress","type":"optional(address)"},
 		{"init":false,"name":"m_requestsMask","type":"uint256"},
 		{"init":false,"name":"m_requestsMaskData","type":"uint256"},
+		{"init":false,"name":"m_requestsMaskCode","type":"uint256"},
+		{"init":false,"name":"m_requestsMaskConfig","type":"uint256"},
 		{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"name":"dest","type":"address"},{"name":"value","type":"uint128"},{"name":"cc","type":"map(uint32,varuint32)"},{"name":"sendFlags","type":"uint16"},{"name":"payload","type":"cell"},{"name":"bounce","type":"bool"},{"name":"dapp_id","type":"uint256"}],"init":false,"name":"m_transactions","type":"map(uint64,tuple)"},
 		{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"name":"owners_pubkey","type":"uint256[]"},{"name":"owners_address","type":"address[]"},{"name":"reqConfirms","type":"uint8"},{"name":"reqConfirmsData","type":"uint8"}],"init":false,"name":"m_data","type":"map(uint64,tuple)"},
+		{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"name":"newcode","type":"cell"},{"name":"cell","type":"cell"}],"init":false,"name":"m_code","type":"map(uint64,tuple)"},
+		{"components":[{"name":"id","type":"uint64"},{"name":"confirmationsMask","type":"uint32"},{"name":"signsRequired","type":"uint8"},{"name":"signsReceived","type":"uint8"},{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"name":"creator","type":"tuple"},{"components":[{"name":"minBalance","type":"uint128"},{"name":"targetBalance","type":"uint128"}],"name":"config","type":"tuple"}],"init":false,"name":"m_config","type":"map(uint64,tuple)"},
+		{"components":[{"name":"minBalance","type":"uint128"},{"name":"targetBalance","type":"uint128"}],"init":false,"name":"m_balanceConfig","type":"tuple"},
 		{"components":[{"name":"owner_pubkey","type":"optional(uint256)"},{"name":"owner_address","type":"optional(address)"},{"name":"index","type":"uint8"}],"init":false,"name":"m_custodians","type":"map(uint256,tuple)"},
 		{"init":false,"name":"m_custodianCount","type":"uint8"},
 		{"init":false,"name":"m_defaultRequiredConfirmations","type":"uint8"},

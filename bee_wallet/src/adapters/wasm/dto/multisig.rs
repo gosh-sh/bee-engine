@@ -1,4 +1,4 @@
-//! TS-typed wasm DTOs for the flat-Multisig giver deploy. `TKeyPair` is
+//! TS-typed wasm DTOs for the canonical Multisig giver deploy. `TKeyPair` is
 //! declared once in `dto/mod.rs` and reused here.
 
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -21,30 +21,11 @@ export type TParamsOfDeployMultisigViaGiver = {
     // and the WASM rejects them ("invalid type: string, expected u32").
     giver_ecc?: Map<number, string>;
     wait_for_active?: boolean;
-    // Which multisig build to deploy. Omit for the SDK's default build, name a
-    // build vendored in the SDK, or pass your own code+ABI pair.
-    code?: TMultisigBuild | TMultisigCode;
 };
-
-// Build vendored in this SDK, selectable by name — no need to ship a `.tvc`
-// from the frontend.
-export type TMultisigBuild = "update_custodian_v2_4";
 
 export type TMultisigBalanceConfig = {
     min_balance: string;
     target_balance: string;
-};
-
-// Your own build. `tvc_b64` and `abi` are BOTH required: on ABI >= 2.3 the
-// state-init data cell is rebuilt from the ABI's `fields` list before the
-// address is hashed, so the ABI is part of the address. Mixing one build's code
-// with another's ABI derives an address whose storage layout the code does not
-// agree with — hence no way to pass just one.
-export type TMultisigCode = {
-    // The build's `.tvc`, base64-encoded.
-    tvc_b64: string;
-    // That build's `.abi.json` — stringified or the imported object.
-    abi: string | object;
 };
 
 export type TResultOfDeployMultisigViaGiver = {

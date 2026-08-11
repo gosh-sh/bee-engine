@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@teamgosh/bee-sdk?color=cb3837&logo=npm)](https://www.npmjs.com/package/@teamgosh/bee-sdk)
 
 WebAssembly SDK for [Acki Nacki](https://ackinacki.com) — drive multifactor
-wallets, mining, wallet-connect sessions, and flat-multisig deploy straight from
+wallets, mining, wallet-connect sessions, and Multisig deploy straight from
 the browser. Compiled from the `bee-engine` Rust workspace with `wasm-pack`
 (`web` target), fully typed.
 
@@ -12,7 +12,7 @@ the browser. Compiled from the `bee-engine` Rust workspace with `wasm-pack`
 - **Multifactor wallets** — deploy, query, manage factors, zk-login.
 - **Mining** — resolve miner addresses, set mining keys, drive a miner.
 - **Wallet-connect** — shared-key sessions, challenge/response, profile resolve.
-- **Flat multisig** — fully client-side giver-funded deploy + ECC balance reads.
+- **Multisig** — fully client-side giver-funded deploy + ECC balance reads.
 - **Typed end-to-end** — complete `.d.ts` ships with the package.
 
 > **Runtime:** browser / WebAssembly (built `wasm-pack --target web`). Not a
@@ -63,7 +63,7 @@ Call `init` once at startup; everything below assumes it has resolved.
 
 ## Usage
 
-### Flat multisig deploy (shellnet, fully client-side)
+### Multisig deploy (shellnet, fully client-side)
 
 Funds a fresh multisig address from the default shellnet giver, then deploys it.
 Always returns the owner keypair — **persist `secret`**. All amounts are strings
@@ -82,7 +82,7 @@ const res = await deploy_multisig_via_giver({
   // giver_value?     — SHELL (ECC[2]) gas top-up, default "1000000000000000"
   // giver_ecc?       — extra ECC, Map<currency_id, "amount">
   // wait_for_active? — wait until Active, default true
-  // code?            — deploy a different multisig build (see below)
+  // balance_config?  — automatic SHELL-to-vmshell thresholds (see below)
 });
 
 console.log(res.address);     // 0x… canonical <dapp>::<account>
@@ -96,18 +96,15 @@ const balances = await multisig_balances({
 // e.g. { "2": "10000000000" }  (1 = NACKL, 2 = SHELL, 3 = USDC)
 ```
 
-#### Choosing the multisig build
+#### Canonical multisig build
 
-`code` picks which contract gets deployed. Three forms:
+Bee deploys one contract: `UpdateCustodianMultisigWallet` v2.4.0, code hash
+`cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1`.
+There is no build selector or custom ABI/TVC parameter.
 
 ```ts
-// 1. Omit it — the SDK's default build (DexDo flat Multisig).
-await deploy_multisig_via_giver({ endpoints });
-
-// 2. A build vendored in the SDK, by name. No `.tvc` to ship from the frontend.
 await deploy_multisig_via_giver({
   endpoints,
-  code: "update_custodian_v2_4", // UpdateCustodianMultisigWallet v2.4.0
   // Optional uint128 decimal strings. Omit (or pass 0/0) to disable automatic
   // SHELL-to-vmshell conversion.
   balance_config: {
@@ -115,32 +112,11 @@ await deploy_multisig_via_giver({
     target_balance: "2000000000",
   },
 });
-
-// 3. Your own build.
-import abi from "./MyMultisig.abi.json";
-await deploy_multisig_via_giver({
-  endpoints,
-  code: { tvc_b64: myTvcBase64, abi },   // `abi`: object or string
-});
 ```
 
-Vendored builds:
-
-| `code` | contract | code hash |
-|---|---|---|
-| *(omitted)* | DexDo flat Multisig | — |
-| `"update_custodian_v2_4"` | `UpdateCustodianMultisigWallet` v2.4.0 | `cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1` |
-
-In form 3, `tvc_b64` and `abi` are both required and must come from the *same*
-build: on ABI ≥ 2.3 the state-init data cell is rebuilt from the ABI's `fields`
-before the address is hashed, so mixing one build's code with another's ABI
-derives a different address whose storage layout the code doesn't agree with.
-Sending only one half is an error, not a default.
-
-The build is part of the address, so each one lands somewhere different — the
-returned `address` is always the one that was funded and deployed.
 `balance_config` is constructor input rather than StateInit, so changing it for
-the same v2.4 build and owner keys does not change the derived address.
+the same owner keys does not change the derived address. Changing the embedded
+ABI/TVC does change addresses and therefore requires a breaking bee release.
 
 ### Multifactor wallet
 

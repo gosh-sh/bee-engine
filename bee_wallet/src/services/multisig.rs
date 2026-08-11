@@ -1,4 +1,4 @@
-//! Flat `Multisig` deploy helpers (kit `contracts/abi/multisig/`).
+//! Canonical `UpdateCustodianMultisigWallet` deploy helpers.
 //!
 //! Three composable, network-agnostic bricks plus one shellnet-only
 //! convenience composition:
@@ -14,16 +14,8 @@
 //!    Active).
 //!
 //! [`deploy_multisig_via_giver`] wires 1 → 2 → 3 for a fully client-side
-//! shellnet deploy. The ABI/TVC are vendored from the kit (`assets/multisig/`)
-//! because the kit's `multisig` binding intentionally leaves deploy out of
-//! scope.
-//!
-//! That pair is the *default*, not a hard wiring: every brick takes its build
-//! from the spec ([`MultisigDeploySpec::code`]), so the default build, the
-//! supported `UpdateCustodianMultisigWallet` v2.4 build, and a caller's own
-//! (`code: { tvc_b64, abi }`) are deployable. A different build means a
-//! different derived address, which is why the override feeds brick 1 too, and
-//! why code and ABI travel together (see [`MultisigCode`]).
+//! shellnet deploy. The single accepted ABI/TVC pair is vendored under
+//! `assets/multisig/`; every brick uses that exact pair.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,40 +47,24 @@ use serde_json::json;
 use crate::errors::AppError;
 use crate::errors::AppResult;
 
-/// Canonical flat Multisig ABI/TVC, vendored at build time so the deploy is
-/// fully self-contained (the kit doesn't expose them publicly). This is the
-/// *default* build only — [`MultisigDeploySpec::code`] overrides it per deploy,
-/// so a caller can put a different build (e.g. `UpdateCustodianMultisigWallet`
-/// v2.4) on one network while the default stays put. See
-/// `assets/multisig/PROVENANCE.md`.
+/// Canonical `UpdateCustodianMultisigWallet` v2.4.0 ABI/TVC, vendored at build
+/// time so deploy and address derivation are fully self-contained. See
+/// `assets/multisig/PROVENANCE.md` for immutable source and artifact hashes.
 const MULTISIG_ABI: &str = include_str!("../../assets/multisig/Multisig.abi.json");
 const MULTISIG_TVC: &[u8] = include_bytes!("../../assets/multisig/Multisig.tvc");
 
-/// Canonical v2.4 artifact, pinned to acki-nacki commit
-/// `44fe02ea01e4bb31d431ed57d1f9b3dc3dd88a18`.
-const UPDATE_CUSTODIAN_V2_4_ABI: &str =
-    include_str!("../../assets/multisig/v2_4/UpdateCustodianMultisigWallet.abi.json");
-const UPDATE_CUSTODIAN_V2_4_TVC: &[u8] =
-    include_bytes!("../../assets/multisig/v2_4/UpdateCustodianMultisigWallet.tvc");
-
-const UPDATE_CUSTODIAN_V2_4_NAME: &str = "update_custodian_v2_4";
-
-pub const UPDATE_CUSTODIAN_V2_4_CODE_HASH: &str =
+pub const MULTISIG_CODE_HASH: &str =
     "cfcaac10d43c8dc062298cb48df097be67cddec52b9cfd558309a7549f01c1f1";
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
-const UPDATE_CUSTODIAN_V2_4_ABI_SHA256: &str =
+const MULTISIG_ABI_SHA256: &str =
     "e7573b233667cf50d8edc9ab0ce235f8ac88674ae9610c77d426bec22070f581";
 #[cfg(all(test, not(target_arch = "wasm32")))]
-const UPDATE_CUSTODIAN_V2_4_TVC_SHA256: &str =
+const MULTISIG_TVC_SHA256: &str =
     "b0d72acbbdc6af309823e74b96b0b3ffb0f871a5b98316b6e89affdfb56c5c9d";
 
-/// Constructor shapes supported by the deploy helper. The v2.4 suffix is
-/// explicit because it changes contract behavior even though it does not feed
-/// StateInit/address derivation.
-const BASE_CONSTRUCTOR_INPUTS: [&str; 5] =
-    ["owners_pubkey", "owners_address", "reqConfirms", "reqConfirmsData", "value"];
-const BALANCE_CONSTRUCTOR_INPUTS: [&str; 7] = [
+#[cfg(all(test, not(target_arch = "wasm32")))]
+const MULTISIG_CONSTRUCTOR_INPUTS: [&str; 7] = [
     "owners_pubkey",
     "owners_address",
     "reqConfirms",
@@ -121,46 +97,6 @@ const GIVER_FLAG: u8 = 16;
 /// 350 ms floor the consumer asked for, under the node's ceiling). Reads are
 /// NOT gated — only the sends in [`deploy_multisig_via_giver`] go through this.
 const MAX_SEND_RPS: u32 = 2;
-
-/// A multisig build to deploy: compiled code plus the ABI it was compiled from.
-///
-/// The two are **one unit, not two independent knobs**. On ABI ≥ 2.3 (all
-/// vendored ABIs here declare 2.4) the state-init *data* cell is rebuilt from
-/// the ABI's
-/// `fields` list and then hashed into the address — see
-/// `tvm_sdk::ContractImage::update_data`, which routes non-data-map ABIs
-/// through `encode_storage_fields(abi_json, …)` and re-derives
-/// `state_init.hash()`. So an ABI carries storage layout, not just a calling
-/// convention: pairing v1's ABI with v2's code yields a *different* address
-/// whose data cell the code does not agree with (measured against
-/// `UpdateCustodianMultisigWallet` v2.4.0, whose `fields` add
-/// `m_requestsMaskCode` and `m_code`). Hence one struct.
-#[derive(Debug, Clone)]
-pub struct MultisigCode {
-    /// Raw `.tvc` bytes of the build.
-    pub tvc: Vec<u8>,
-    /// Contents of that build's `.abi.json`.
-    pub abi: String,
-}
-
-impl MultisigCode {
-    /// Canonical `UpdateCustodianMultisigWallet_v2` v2.4.0.
-    pub fn update_custodian_v2_4() -> Self {
-        Self { tvc: UPDATE_CUSTODIAN_V2_4_TVC.to_vec(), abi: UPDATE_CUSTODIAN_V2_4_ABI.to_string() }
-    }
-
-    /// Resolves a vendored build by its wire name.
-    fn by_name(name: &str) -> AppResult<Self> {
-        match name {
-            UPDATE_CUSTODIAN_V2_4_NAME => Ok(Self::update_custodian_v2_4()),
-            other => Err(AppError::new(format!(
-                "unknown multisig build `{other}` — vendored builds are \
-                 [{UPDATE_CUSTODIAN_V2_4_NAME}]; omit `code` \
-                 for the default build, or pass `{{ tvc_b64, abi }}` for your own",
-            ))),
-        }
-    }
-}
 
 /// Initial gas self-management configuration supported by
 /// `UpdateCustodianMultisigWallet_v2` v2.4.0. Amounts are uint128 decimal
@@ -202,22 +138,9 @@ impl MultisigBalanceConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MultisigConstructorKind {
-    Base,
-    BalanceManaged,
-}
-
-/// Everything needed to deterministically encode a flat Multisig deploy. The
-/// owner `keys` sign their own deploy; `owners_pubkey` are the custodians
+/// Everything needed to deterministically encode a canonical Multisig deploy.
+/// The owner `keys` sign their own deploy; `owners_pubkey` are the custodians
 /// (`uint256[]`, each a `0x`-prefixed hex), defaulting to the owner alone.
-///
-/// `code` is the contract-build escape hatch: `None` deploys the vendored
-/// build, `Some` deploys whatever you hand it (e.g.
-/// `UpdateCustodianMultisigWallet` v2.4 on one network while another stays on
-/// the vendored one). It feeds address derivation too, so
-/// [`compute_multisig_address`] and [`deploy_multisig`] always agree on the
-/// build the spec carries.
 #[derive(Debug, Clone)]
 pub struct MultisigDeploySpec {
     pub keys: KeyPair,
@@ -226,106 +149,39 @@ pub struct MultisigDeploySpec {
     pub req_confirms_data: u8,
     /// Constructor `value` arg (`uint64`), passed through as a decimal string.
     pub constructor_value: String,
-    /// v2.4 gas self-management settings. Omit to pass `0/0` to v2.4 and
-    /// disable automatic conversion. Builds with the five-argument constructor
-    /// reject this field.
+    /// Gas self-management settings. Omit to pass `0/0` and disable automatic
+    /// conversion.
     pub balance_config: Option<MultisigBalanceConfig>,
-    /// Build override. `None` = the vendored build.
-    pub code: Option<MultisigCode>,
 }
 
 impl MultisigDeploySpec {
-    /// Code this spec deploys: the caller's override, else the vendored build.
-    fn code_bytes(&self) -> &[u8] {
-        self.code.as_ref().map_or(MULTISIG_TVC, |code| code.tvc.as_slice())
-    }
-
-    /// ABI this spec encodes against: the caller's override, else the vendored
-    /// one.
-    fn abi_json(&self) -> &str {
-        self.code.as_ref().map_or(MULTISIG_ABI, |code| code.abi.as_str())
-    }
-
-    /// Classifies the selected ABI by its constructor input names. Keeping this
-    /// check exact prevents us from encoding a message that the contract cannot
-    /// decode or silently omitting a newly required constructor argument.
-    fn constructor_kind(&self) -> AppResult<MultisigConstructorKind> {
-        let parsed: serde_json::Value = serde_json::from_str(self.abi_json())
-            .map_err(|e| AppError::new(format!("multisig `abi` is not valid JSON: {e}")))?;
-        let constructor = parsed
-            .get("functions")
-            .and_then(|f| f.as_array())
-            .and_then(|fns| {
-                fns.iter().find(|f| f.get("name").and_then(|n| n.as_str()) == Some("constructor"))
-            })
-            .ok_or_else(|| AppError::new("multisig `abi` declares no `constructor`"))?;
-        let inputs: Vec<&str> = constructor
-            .get("inputs")
-            .and_then(|i| i.as_array())
-            .map(|inputs| {
-                inputs.iter().filter_map(|i| i.get("name").and_then(|n| n.as_str())).collect()
-            })
-            .unwrap_or_default();
-
-        if inputs == BASE_CONSTRUCTOR_INPUTS {
-            Ok(MultisigConstructorKind::Base)
-        } else if inputs == BALANCE_CONSTRUCTOR_INPUTS {
-            Ok(MultisigConstructorKind::BalanceManaged)
-        } else {
-            Err(AppError::new(format!(
-                "multisig `abi` has an incompatible constructor: got [{}], expected [{}] or [{}]",
-                inputs.join(", "),
-                BASE_CONSTRUCTOR_INPUTS.join(", "),
-                BALANCE_CONSTRUCTOR_INPUTS.join(", "),
-            )))
+    fn validate(&self) -> AppResult<()> {
+        if let Some(config) = &self.balance_config {
+            config.validate()?;
         }
-    }
-
-    /// Rejects inputs that tvm_client would only reject much later, deep inside
-    /// BOC/ABI parsing, or that would encode cleanly and fail on-chain.
-    fn validate(&self) -> AppResult<MultisigConstructorKind> {
-        if self.code.as_ref().is_some_and(|code| code.tvc.is_empty()) {
-            return Err(AppError::new("multisig code override has an empty `tvc`"));
-        }
-
-        let kind = self.constructor_kind()?;
-        match (kind, self.balance_config.as_ref()) {
-            (MultisigConstructorKind::Base, Some(_)) => {
-                return Err(AppError::new(
-                    "selected multisig build does not accept `balance_config`",
-                ));
-            }
-            (MultisigConstructorKind::BalanceManaged, Some(config)) => config.validate()?,
-            _ => {}
-        }
-        Ok(kind)
+        Ok(())
     }
 
     fn constructor_input(&self) -> AppResult<serde_json::Value> {
-        let kind = self.validate()?;
-        let mut input = json!({
+        self.validate()?;
+        let config = self.balance_config.clone().unwrap_or_default();
+        Ok(json!({
             "owners_pubkey": self.owners_pubkey,
             "owners_address": [],
             "reqConfirms": self.req_confirms,
             "reqConfirmsData": self.req_confirms_data,
             "value": self.constructor_value,
-        });
-
-        if kind == MultisigConstructorKind::BalanceManaged {
-            let config = self.balance_config.clone().unwrap_or_default();
-            let object = input.as_object_mut().expect("constructor input is an object");
-            object.insert("minBalance".to_string(), json!(config.min_balance));
-            object.insert("targetBalance".to_string(), json!(config.target_balance));
-        }
-        Ok(input)
+            "minBalance": config.min_balance,
+            "targetBalance": config.target_balance,
+        }))
     }
 
     /// Builds the `ParamsOfEncodeMessage` shared by address computation and the
     /// actual deploy, so both derive from one source of truth.
     fn encode_params(&self) -> AppResult<ParamsOfEncodeMessage> {
-        let tvc_b64 = base64::engine::general_purpose::STANDARD.encode(self.code_bytes());
+        let tvc_b64 = base64::engine::general_purpose::STANDARD.encode(MULTISIG_TVC);
         Ok(ParamsOfEncodeMessage {
-            abi: Abi::Json(self.abi_json().to_string()),
+            abi: Abi::Json(MULTISIG_ABI.to_string()),
             address: None,
             deploy_set: Some(DeploySet {
                 tvc: Some(tvc_b64),
@@ -363,8 +219,6 @@ fn canonical_address(raw: &str) -> String {
 
 /// **Brick 1.** Derive the deterministic address of a not-yet-deployed flat
 /// Multisig. Pure local crypto — no network round-trip beyond `ctx` setup.
-/// Derives from `spec.code` when set, so a build override yields the address
-/// that build will actually occupy.
 pub async fn compute_multisig_address(
     ctx: Arc<ClientContext>,
     spec: &MultisigDeploySpec,
@@ -381,10 +235,10 @@ pub struct DeployOutcome {
     pub deploy_tx: Option<String>,
 }
 
-/// **Brick 3.** Deploy a flat Multisig whose address is *already funded*.
-/// Network-agnostic — anyone can call this once the computed address holds a
-/// balance. Idempotent: if the account is already Active, returns immediately
-/// without sending a deploy message.
+/// **Brick 3.** Deploy the canonical Multisig whose address is *already
+/// funded*. Network-agnostic — anyone can call this once the computed address
+/// holds a balance. Idempotent: if the account is already Active, returns
+/// immediately without sending a deploy message.
 pub async fn deploy_multisig(
     ctx: Arc<ClientContext>,
     spec: &MultisigDeploySpec,
@@ -427,7 +281,7 @@ pub async fn deploy_multisig(
         // lands (account Active, `exit_code: 0`, expected code hash) while the
         // gateway answers that transaction query with HTTP 502 — reproducible with
         // plain curl on the tx hash, because v2's ~7 KB of code makes for a much
-        // larger transaction BOC than the vendored build's.
+        // larger transaction BOC than older Multisig builds produced.
         //
         // So before believing the error, ask the chain (bounded: 10 × 1 s, error
         // path only, even when `wait_for_active` is false — a wrong failure is
@@ -458,6 +312,7 @@ pub async fn deploy_multisig(
 /// Parameters for [`deploy_multisig_via_giver`]. All amounts are strings: u64 /
 /// ECC values exceed `2^53` and would lose precision as a JS `number`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ParamsOfDeployMultisigViaGiver {
     /// GQL endpoints of the (shellnet) network.
     pub endpoints: Vec<String>,
@@ -474,9 +329,8 @@ pub struct ParamsOfDeployMultisigViaGiver {
     /// Constructor `value` arg (`uint64` as string). Default `"0"`.
     #[serde(default)]
     pub constructor_value: Option<String>,
-    /// v2.4 gas self-management settings (`uint128` decimal strings). Omit to
-    /// disable automatic conversion with `0/0`. Rejected by base-constructor
-    /// builds.
+    /// Gas self-management settings (`uint128` decimal strings). Omit to
+    /// disable automatic conversion with `0/0`.
     #[serde(default)]
     pub balance_config: Option<MultisigBalanceConfig>,
     /// SHELL-ECC funding of the future address via the flag-16 creation
@@ -491,81 +345,6 @@ pub struct ParamsOfDeployMultisigViaGiver {
     /// Wait for the deployed account to reach Active. Default `true`.
     #[serde(default)]
     pub wait_for_active: Option<bool>,
-    /// Build override: a vendored build's explicit name (for example,
-    /// `"update_custodian_v2_4"`) or your own `{ tvc_b64, abi }`. Absent → the
-    /// default vendored build.
-    #[serde(default)]
-    pub code: Option<ParamsOfMultisigCode>,
-}
-
-/// Wire form of a build selection: either a build vendored in this SDK, picked
-/// by name, or a caller-supplied pair. The pair is always both halves — see
-/// [`MultisigCode`] for why they can't be supplied independently.
-#[derive(Debug, Clone)]
-pub enum ParamsOfMultisigCode {
-    /// A build vendored here, e.g. `"update_custodian_v2_4"`.
-    Named(String),
-    /// Your own build: base64 `.tvc` (line wrapping tolerated) plus that
-    /// build's `.abi.json`, either stringified or as the already-parsed object
-    /// (JS callers usually hold the latter — `import abi from "…json"`).
-    Custom { tvc_b64: String, abi: serde_json::Value },
-}
-
-/// Hand-written so the shape errors name the actual mistake. A derived
-/// `#[serde(untagged)]` enum answers every malformed `code` with "data did not
-/// match any variant", which is useless precisely where the caller needs help —
-/// e.g. sending `{ tvc_b64 }` and forgetting the ABI, the one mistake that
-/// would otherwise put a build at an address whose storage layout it disagrees
-/// with.
-impl<'de> Deserialize<'de> for ParamsOfMultisigCode {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-
-        let value = serde_json::Value::deserialize(deserializer)?;
-        match value {
-            serde_json::Value::String(name) => Ok(Self::Named(name)),
-            serde_json::Value::Object(mut map) => {
-                let tvc_b64 = map.remove("tvc_b64");
-                let abi = map.remove("abi");
-                match (tvc_b64, abi) {
-                    (Some(serde_json::Value::String(tvc_b64)), Some(abi)) => {
-                        Ok(Self::Custom { tvc_b64, abi })
-                    }
-                    (Some(_), None) => Err(D::Error::custom(
-                        "`code.abi` is missing — a build's code and ABI must be supplied \
-                         together, from the same build",
-                    )),
-                    (None, Some(_)) => Err(D::Error::custom(
-                        "`code.tvc_b64` is missing — a build's code and ABI must be supplied \
-                         together, from the same build",
-                    )),
-                    (Some(_), Some(_)) => {
-                        Err(D::Error::custom("`code.tvc_b64` must be a base64 string"))
-                    }
-                    (None, None) => Err(D::Error::custom(
-                        "`code` object must be `{ tvc_b64, abi }`; omit `code` for the default \
-                         build or pass a vendored build's name",
-                    )),
-                }
-            }
-            other => Err(D::Error::custom(format!(
-                "`code` must be a vendored build's name or `{{ tvc_b64, abi }}`, got {other}"
-            ))),
-        }
-    }
-}
-
-impl TryFrom<ParamsOfMultisigCode> for MultisigCode {
-    type Error = AppError;
-
-    fn try_from(params: ParamsOfMultisigCode) -> AppResult<Self> {
-        match params {
-            ParamsOfMultisigCode::Named(name) => MultisigCode::by_name(&name),
-            ParamsOfMultisigCode::Custom { tvc_b64, abi } => {
-                Ok(Self { tvc: decode_tvc_b64(&tvc_b64)?, abi: abi_to_json_string(abi)? })
-            }
-        }
-    }
 }
 
 /// Result of [`deploy_multisig_via_giver`].
@@ -598,34 +377,6 @@ fn parse_amount(field: &str, value: &str) -> AppResult<u64> {
     value
         .parse::<u64>()
         .map_err(|e| AppError::new(format!("invalid {field} amount `{value}`: {e}")))
-}
-
-/// Decodes a base64 `.tvc` override. Whitespace is stripped first: `.tvc.b64`
-/// files (and anything that round-tripped through a terminal) are usually line
-/// wrapped, and strict base64 would reject the newlines.
-fn decode_tvc_b64(b64: &str) -> AppResult<Vec<u8>> {
-    let compact: String = b64.chars().filter(|c| !c.is_ascii_whitespace()).collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(&compact)
-        .map_err(|e| AppError::new(format!("invalid `tvc_b64` (expected a base64 `.tvc`): {e}")))
-}
-
-/// Normalizes an `abi` override to the JSON text tvm_client wants, accepting
-/// both the stringified ABI and the parsed object.
-fn abi_to_json_string(abi: serde_json::Value) -> AppResult<String> {
-    match abi {
-        serde_json::Value::String(s) => Ok(s),
-        object @ serde_json::Value::Object(_) => Ok(object.to_string()),
-        other => Err(AppError::new(format!(
-            "`abi` override must be a JSON object or a stringified ABI, got {}",
-            match other {
-                serde_json::Value::Null => "null",
-                serde_json::Value::Bool(_) => "a boolean",
-                serde_json::Value::Number(_) => "a number",
-                _ => "an array",
-            }
-        ))),
-    }
 }
 
 /// 429 / throttling signal. tvm_client strips HTTP headers before surfacing
@@ -693,7 +444,7 @@ where
     send_with_retry_policy(&RetryPolicy::http_default(), rl, context, op).await
 }
 
-/// Fully client-side flat-Multisig deploy on shellnet: compute the address
+/// Fully client-side Multisig deploy on shellnet: compute the address
 /// (brick 1), fund it from the default giver (brick 2, **shellnet only**), then
 /// deploy (brick 3). Idempotent — an already-Active address skips funding and
 /// deploy. Always returns the owner keypair (generated when not supplied).
@@ -722,10 +473,6 @@ pub async fn deploy_multisig_via_giver(
         req_confirms_data: params.req_confirms_data.unwrap_or(1),
         constructor_value: params.constructor_value.unwrap_or_else(|| "0".to_string()),
         balance_config: params.balance_config,
-        // Build override (absent = vendored build). Decoded and validated before
-        // any giver money moves: `compute_multisig_address` below runs
-        // `spec.validate()`, so a bad override fails without spending anything.
-        code: params.code.map(MultisigCode::try_from).transpose()?,
     };
 
     let address = compute_multisig_address(ctx.clone(), &spec).await?;
@@ -845,9 +592,9 @@ pub struct ParamsOfMultisigBalances {
 /// ECC balances of any account by address. dApp id == account (self-rooted):
 /// canonical `<dapp>::<account>` → part before `::`; else raw `0:<hex>`.
 ///
-/// Generic (works on a flat multisig), unlike the multifactor-specific balance
-/// reader. Returns raw integer amounts as strings keyed by ECC currency id
-/// (1=NACKL, 2=SHELL, 3=USDC); the client applies per-token decimals.
+/// Generic (works on the canonical Multisig), unlike the multifactor-specific
+/// balance reader. Returns raw integer amounts as strings keyed by ECC currency
+/// id (1=NACKL, 2=SHELL, 3=USDC); the client applies per-token decimals.
 pub async fn multisig_balances(
     endpoints: Vec<String>,
     address: String,
@@ -880,8 +627,8 @@ mod tests {
     }
 
     /// Spec with a fixed (bogus but well-formed) keypair — these tests never
-    /// sign, they only exercise build resolution and validation.
-    fn spec_with(code: Option<MultisigCode>) -> MultisigDeploySpec {
+    /// sign, they only exercise constructor input and validation.
+    fn spec() -> MultisigDeploySpec {
         MultisigDeploySpec {
             keys: KeyPair { public: "aa".repeat(32), secret: "bb".repeat(32) },
             owners_pubkey: vec![format!("0x{}", "aa".repeat(32))],
@@ -889,33 +636,7 @@ mod tests {
             req_confirms_data: 1,
             constructor_value: "0".to_string(),
             balance_config: None,
-            code,
         }
-    }
-
-    /// Build override with placeholder code and the given ABI.
-    fn code_with_abi(abi: impl Into<String>) -> Option<MultisigCode> {
-        Some(MultisigCode { tvc: vec![1, 2, 3], abi: abi.into() })
-    }
-
-    /// Minimal ABI shaped like a *newer* multisig build: same constructor,
-    /// extra functions (v2 adds `submitUpdateCode` / `confirmUpdateCode`).
-    fn superset_abi() -> String {
-        json!({
-            "ABI version": 2,
-            "version": "2.4",
-            "header": ["pubkey", "time", "expire"],
-            "functions": [
-                { "name": "constructor", "inputs": BASE_CONSTRUCTOR_INPUTS
-                    .iter()
-                    .map(|name| json!({ "name": name, "type": "uint64" }))
-                    .collect::<Vec<_>>(), "outputs": [] },
-                { "name": "submitUpdateCode",
-                  "inputs": [{ "name": "newcode", "type": "cell" }],
-                  "outputs": [{ "name": "codeUpdateId", "type": "uint64" }] },
-            ],
-        })
-        .to_string()
     }
 
     /// Fast policy for tests: real backoff math, 1 ms sleeps, no jitter.
@@ -939,167 +660,64 @@ mod tests {
         assert_eq!(DEFAULT_GIVER_VALUE, 1_000_000_000_000_000);
     }
 
+    /// The canonical UpdateCustodian build is an immutable input to address
+    /// derivation. Pin ABI, TVC, decoded code cell, and constructor shape
+    /// before it can reach a network.
     #[test]
-    fn absent_override_resolves_to_the_vendored_build() {
-        let spec = spec_with(None);
-        assert_eq!(spec.code_bytes(), MULTISIG_TVC);
-        assert_eq!(spec.abi_json(), MULTISIG_ABI);
-        spec.validate().expect("the default spec must always be valid");
-    }
-
-    #[test]
-    fn override_replaces_the_vendored_build() {
-        let spec = spec_with(code_with_abi(superset_abi()));
-        assert_eq!(spec.code_bytes(), &[1, 2, 3]);
-        assert_eq!(spec.abi_json(), superset_abi());
-        // Extra functions on top of an identical constructor is exactly the v2
-        // case: accepted.
-        spec.validate().expect("superset ABI must be accepted");
-    }
-
-    /// Pins [`BASE_CONSTRUCTOR_INPUTS`] against the default asset: if the two
-    /// ever drift, every ABI override would be rejected (or a wrong one
-    /// accepted).
-    #[test]
-    fn vendored_abi_satisfies_the_override_constructor_check() {
-        spec_with(code_with_abi(MULTISIG_ABI))
-            .validate()
-            .expect("vendored ABI must pass the same check overrides face");
-    }
-
-    #[test]
-    fn malformed_overrides_are_rejected_before_any_network_call() {
-        let err = |spec: MultisigDeploySpec| spec.validate().unwrap_err().message;
-
-        let empty_tvc = MultisigCode { tvc: Vec::new(), abi: MULTISIG_ABI.to_string() };
-        assert!(err(spec_with(Some(empty_tvc))).contains("empty `tvc`"));
-        assert!(err(spec_with(code_with_abi("not json"))).contains("not valid JSON"));
-        assert!(err(spec_with(code_with_abi(json!({ "functions": [] }).to_string())))
-            .contains("no `constructor`"));
-
-        // Right shape, wrong constructor: our hardcoded input JSON couldn't be
-        // encoded against it, so it must fail here rather than on-chain.
-        let renamed = json!({
-            "functions": [{
-                "name": "constructor",
-                "inputs": [{ "name": "owners", "type": "uint256[]" }],
-                "outputs": [],
-            }],
-        });
-        let message = err(spec_with(code_with_abi(renamed.to_string())));
-        assert!(message.contains("incompatible constructor"), "got: {message}");
-        assert!(message.contains("owners_pubkey"), "must name what was expected, got: {message}");
-    }
-
-    /// The wire form can only produce a *pair*: a caller who sends just one
-    /// half gets an error naming the missing one, not a silently mismatched
-    /// build. This is the invariant that keeps v2 code away from v1's ABI.
-    #[test]
-    fn wire_code_override_requires_both_halves() {
-        let tvc_b64 = base64::engine::general_purpose::STANDARD.encode(MULTISIG_TVC);
-
-        let complete: ParamsOfMultisigCode =
-            serde_json::from_value(json!({ "tvc_b64": tvc_b64, "abi": MULTISIG_ABI })).unwrap();
-        let code = MultisigCode::try_from(complete).expect("complete pair must convert");
-        assert_eq!(code.tvc, MULTISIG_TVC);
-        assert_eq!(code.abi, MULTISIG_ABI);
-
-        let error = |value: serde_json::Value| {
-            serde_json::from_value::<ParamsOfMultisigCode>(value)
-                .expect_err("half a build must not deserialize")
-                .to_string()
-        };
-        assert!(error(json!({ "tvc_b64": tvc_b64 })).contains("`code.abi` is missing"));
-        assert!(error(json!({ "abi": MULTISIG_ABI })).contains("`code.tvc_b64` is missing"));
-        assert!(error(json!(42)).contains("must be a vendored build's name"));
-    }
-
-    /// The vendored UpdateCustodian build is an immutable input to address
-    /// derivation. Pin ABI, TVC and the decoded code cell before it can reach a
-    /// network.
-    #[test]
-    fn vendored_update_custodian_assets_are_pinned() {
+    fn canonical_multisig_assets_are_pinned() {
         use sha2::Digest;
 
         assert_eq!(
-            UPDATE_CUSTODIAN_V2_4_CODE_HASH,
+            MULTISIG_CODE_HASH,
             ackinacki_kit::contracts::multisig::CODE_HASH,
             "bee deploy artifact and kit operation binding must target the same build",
         );
+        assert_eq!(hex::encode(sha2::Sha256::digest(MULTISIG_ABI.as_bytes())), MULTISIG_ABI_SHA256);
+        assert_eq!(hex::encode(sha2::Sha256::digest(MULTISIG_TVC)), MULTISIG_TVC_SHA256);
 
         let ctx = Arc::new(ClientContext::new(ClientConfig::default()).expect("client context"));
-        let cases = [(
-            MultisigCode::update_custodian_v2_4(),
-            UPDATE_CUSTODIAN_V2_4_ABI_SHA256,
-            UPDATE_CUSTODIAN_V2_4_TVC_SHA256,
-            UPDATE_CUSTODIAN_V2_4_CODE_HASH,
-        )];
+        let decoded = ackinacki_kit::tvm_client::boc::decode_state_init(
+            ctx,
+            ackinacki_kit::tvm_client::boc::ParamsOfDecodeStateInit {
+                state_init: base64::engine::general_purpose::STANDARD.encode(MULTISIG_TVC),
+                boc_cache: None,
+            },
+        )
+        .expect("decode canonical state init");
+        assert_eq!(decoded.code_hash.as_deref(), Some(MULTISIG_CODE_HASH));
+        assert_eq!(decoded.compiler_version.as_deref(), Some("sol 0.81.0"));
 
-        for (code, abi_sha256, tvc_sha256, code_hash) in cases {
-            assert_eq!(hex::encode(sha2::Sha256::digest(code.abi.as_bytes())), abi_sha256);
-            assert_eq!(hex::encode(sha2::Sha256::digest(&code.tvc)), tvc_sha256);
-
-            let decoded = ackinacki_kit::tvm_client::boc::decode_state_init(
-                ctx.clone(),
-                ackinacki_kit::tvm_client::boc::ParamsOfDecodeStateInit {
-                    state_init: base64::engine::general_purpose::STANDARD.encode(&code.tvc),
-                    boc_cache: None,
-                },
-            )
-            .expect("decode vendored state init");
-            assert_eq!(decoded.code_hash.as_deref(), Some(code_hash));
-
-            spec_with(Some(code)).validate().expect("vendored build must be valid");
-        }
+        let abi: serde_json::Value = serde_json::from_str(MULTISIG_ABI).expect("canonical ABI");
+        let inputs = abi["functions"]
+            .as_array()
+            .and_then(|functions| functions.iter().find(|f| f["name"] == "constructor"))
+            .and_then(|constructor| constructor["inputs"].as_array())
+            .expect("canonical constructor")
+            .iter()
+            .map(|input| input["name"].as_str().expect("input name"))
+            .collect::<Vec<_>>();
+        assert_eq!(inputs, MULTISIG_CONSTRUCTOR_INPUTS);
     }
 
     #[test]
-    fn only_the_explicit_v2_4_named_build_is_supported() {
-        let resolve = |name| {
-            let named: ParamsOfMultisigCode = serde_json::from_value(json!(name)).unwrap();
-            MultisigCode::try_from(named)
-        };
-
-        let v2_4 = resolve(UPDATE_CUSTODIAN_V2_4_NAME).expect("v2.4 must resolve");
-        assert_eq!(v2_4.tvc, UPDATE_CUSTODIAN_V2_4_TVC);
-        assert_eq!(v2_4.abi, UPDATE_CUSTODIAN_V2_4_ABI);
-
-        for removed in ["update_custodian_v2", "update_custodian_v2_2", "v3"] {
-            let message = resolve(removed).unwrap_err().message;
-            assert!(message.contains(&format!("unknown multisig build `{removed}`")));
-            assert!(message.contains(UPDATE_CUSTODIAN_V2_4_NAME), "got: {message}");
-        }
-    }
-
-    #[test]
-    fn v2_4_constructor_carries_explicit_or_disabled_balance_config() {
-        let mut explicit = spec_with(Some(MultisigCode::update_custodian_v2_4()));
+    fn constructor_carries_explicit_or_disabled_balance_config() {
+        let mut explicit = spec();
         explicit.balance_config = Some(MultisigBalanceConfig {
             min_balance: "1000000000".to_string(),
             target_balance: "2000000000".to_string(),
         });
-        let input = explicit.constructor_input().expect("v2.4 constructor input");
+        let input = explicit.constructor_input().expect("constructor input");
         assert_eq!(input["minBalance"], "1000000000");
         assert_eq!(input["targetBalance"], "2000000000");
 
-        let disabled = spec_with(Some(MultisigCode::update_custodian_v2_4()))
-            .constructor_input()
-            .expect("default-disabled v2.4 constructor input");
+        let disabled = spec().constructor_input().expect("default-disabled constructor input");
         assert_eq!(disabled["minBalance"], "0");
         assert_eq!(disabled["targetBalance"], "0");
     }
 
     #[test]
-    fn balance_config_is_validated_against_the_selected_constructor() {
-        let mut default_build = spec_with(None);
-        default_build.balance_config = Some(MultisigBalanceConfig {
-            min_balance: "1".to_string(),
-            target_balance: "2".to_string(),
-        });
-        let message = default_build.validate().unwrap_err().message;
-        assert!(message.contains("does not accept `balance_config`"), "got: {message}");
-
-        let mut inverted = spec_with(Some(MultisigCode::update_custodian_v2_4()));
+    fn balance_config_is_validated() {
+        let mut inverted = spec();
         inverted.balance_config = Some(MultisigBalanceConfig {
             min_balance: "2".to_string(),
             target_balance: "1".to_string(),
@@ -1107,7 +725,7 @@ mod tests {
         let message = inverted.validate().unwrap_err().message;
         assert!(message.contains("target_balance must be >= min_balance"), "got: {message}");
 
-        let mut malformed = spec_with(Some(MultisigCode::update_custodian_v2_4()));
+        let mut malformed = spec();
         malformed.balance_config = Some(MultisigBalanceConfig {
             min_balance: "one".to_string(),
             target_balance: "2".to_string(),
@@ -1120,7 +738,6 @@ mod tests {
     fn wire_balance_config_uses_precision_safe_decimal_strings() {
         let params: ParamsOfDeployMultisigViaGiver = serde_json::from_value(json!({
             "endpoints": ["https://example.invalid"],
-            "code": UPDATE_CUSTODIAN_V2_4_NAME,
             "balance_config": {
                 "min_balance": "340282366920938463463374607431768211454",
                 "target_balance": "340282366920938463463374607431768211455"
@@ -1133,76 +750,15 @@ mod tests {
         assert_eq!(config.target_balance, u128::MAX.to_string());
     }
 
-    /// v2's ABI is a superset of the default's by function set — but its
-    /// `fields` add storage slots, which is why the two travel together.
-    /// Pins the fact behind [`MultisigCode`]'s pairing.
     #[test]
-    fn vendored_v2_abi_adds_functions_and_storage_fields() {
-        let names = |abi: &str| -> Vec<String> {
-            let parsed: serde_json::Value = serde_json::from_str(abi).unwrap();
-            parsed["functions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|f| f["name"].as_str().unwrap().to_string())
-                .collect()
-        };
-        let fields = |abi: &str| -> Vec<String> {
-            let parsed: serde_json::Value = serde_json::from_str(abi).unwrap();
-            parsed["fields"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|f| f["name"].as_str().unwrap().to_string())
-                .collect()
-        };
-
-        let (default_fns, v2_fns) = (names(MULTISIG_ABI), names(UPDATE_CUSTODIAN_V2_4_ABI));
-        for name in &default_fns {
-            assert!(v2_fns.contains(name), "v2 must keep `{name}`");
-        }
-        for added in ["submitUpdateCode", "confirmUpdateCode"] {
-            assert!(v2_fns.contains(&added.to_string()), "v2 must add `{added}`");
-            assert!(!default_fns.contains(&added.to_string()));
-        }
-
-        let (default_fields, v2_fields) = (fields(MULTISIG_ABI), fields(UPDATE_CUSTODIAN_V2_4_ABI));
-        for added in ["m_requestsMaskCode", "m_code"] {
-            assert!(v2_fields.contains(&added.to_string()), "v2 must add field `{added}`");
-            assert!(!default_fields.contains(&added.to_string()));
-        }
-        assert_ne!(default_fields, v2_fields, "differing `fields` ⇒ differing address");
-    }
-
-    #[test]
-    fn tvc_b64_decodes_and_tolerates_line_wrapping() {
-        let raw = MULTISIG_TVC;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
-        assert_eq!(decode_tvc_b64(&b64).unwrap(), raw);
-
-        // Line-wrapped (as `base64 < file` emits) must decode identically.
-        let wrapped =
-            b64.as_bytes().chunks(76).map(String::from_utf8_lossy).collect::<Vec<_>>().join("\n");
-        assert_eq!(decode_tvc_b64(&wrapped).unwrap(), raw);
-
-        let err = decode_tvc_b64("!!! not base64 !!!").unwrap_err().message;
-        assert!(err.contains("invalid `tvc_b64`"), "got: {err}");
-    }
-
-    #[test]
-    fn abi_override_accepts_both_string_and_object() {
-        // Stringified: passed through verbatim.
-        let as_string = json!("{\"functions\":[]}");
-        assert_eq!(abi_to_json_string(as_string).unwrap(), "{\"functions\":[]}");
-
-        // Parsed object (what a JS `import abi from "./x.abi.json"` yields):
-        // re-serialized, and must survive the round-trip as the same JSON.
-        let as_object: serde_json::Value = serde_json::from_str(MULTISIG_ABI).unwrap();
-        let rendered = abi_to_json_string(as_object.clone()).unwrap();
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&rendered).unwrap(), as_object);
-
-        let err = abi_to_json_string(json!([1, 2])).unwrap_err().message;
-        assert!(err.contains("must be a JSON object or a stringified ABI"), "got: {err}");
+    fn removed_code_selector_is_rejected_instead_of_ignored() {
+        let error = serde_json::from_value::<ParamsOfDeployMultisigViaGiver>(json!({
+            "endpoints": ["https://example.invalid"],
+            "code": "update_custodian_v2_4"
+        }))
+        .expect_err("removed selector must not silently fall back")
+        .to_string();
+        assert!(error.contains("unknown field `code`"), "got: {error}");
     }
 
     #[test]
