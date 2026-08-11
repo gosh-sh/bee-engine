@@ -35,7 +35,9 @@ Current `Multisig.tvc` sha256: d3b38bcac8f60c1274f6099fc1e75746c02a2ff22af4efc68
 Vendored **verbatim** (not recompiled) from immutable `gosh-sh/acki-nacki`
 commit `44fe02ea01e4bb31d431ed57d1f9b3dc3dd88a18`, path
 `contracts/0.81.0_compiled/updatecustodianmultisigwallet_v2/`. This is the
-canonical deployment artifact pinned by `dexdo-cli-private` on 2026-08-08.
+canonical deployment artifact pinned by `dexdo-cli-private` on 2026-08-08 and
+used by the `ackinacki-kit` v5.1.0 multisig binding. A unit test asserts that
+the bee deploy artifact and kit binding expose the same code hash.
 
     upstream UpdateCustodianMultisigWallet_v2.tvc       10943 B  blob a9156bd2da0672a07a7dc02140c2ce5364015edc
     upstream UpdateCustodianMultisigWallet_v2.abi.json  16885 B  blob 486e772a1d2238c587bdc9a33f78c5a66c3b8ba6

@@ -4261,7 +4261,7 @@ async fn test_update_contract_flags() {
 // DEX voucher generation (bee_wallet responsibility)
 // ============================================================
 // Behind the `dex` feature: the voucher path needs `dodex-contracts`, which is
-// still on kit v4.0.1 while we are on v5.0.0 (see the feature's comment in
+// still on kit v4.0.1 while we are on v5.1.0 (see the feature's comment in
 // Cargo.toml).
 
 #[cfg(feature = "dex")]

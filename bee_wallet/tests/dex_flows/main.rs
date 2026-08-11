@@ -23,7 +23,7 @@
 // Native-only (heavy halo2 + dodex-sdk graph). Empty crate on wasm32 so
 // `wasm-pack test --tests` doesn't try to build it. Also empty without the
 // `dex` feature: dodex is still on kit v4.0.1 and its types don't unify with
-// ours on v5.0.0 (see the `dex` feature comment in Cargo.toml).
+// ours on v5.1.0 (see the `dex` feature comment in Cargo.toml).
 #![cfg(all(not(target_arch = "wasm32"), feature = "dex"))]
 
 mod common;

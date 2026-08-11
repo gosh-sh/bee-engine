@@ -1021,6 +1021,12 @@ mod tests {
     fn vendored_update_custodian_assets_are_pinned() {
         use sha2::Digest;
 
+        assert_eq!(
+            UPDATE_CUSTODIAN_V2_4_CODE_HASH,
+            ackinacki_kit::contracts::multisig::CODE_HASH,
+            "bee deploy artifact and kit operation binding must target the same build",
+        );
+
         let ctx = Arc::new(ClientContext::new(ClientConfig::default()).expect("client context"));
         let cases = [(
             MultisigCode::update_custodian_v2_4(),

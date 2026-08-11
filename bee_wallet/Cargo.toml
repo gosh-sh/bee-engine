@@ -40,7 +40,7 @@ single-wasm = ["wasm"]
 # DEX voucher generation (`generate_voucher`), backed by `dodex-contracts`.
 #
 # OFF by default and currently NOT BUILDABLE: `dodex-backend` still declares kit
-# v4.0.1 while this workspace is on v5.0.0, and cargo keys git packages by
+# v4.0.1 while this workspace is on v5.1.0, and cargo keys git packages by
 # source+ref — so the graph carries two `ackinacki-kit` copies whose types don't
 # unify across the dodex boundary (`ParamsOfNewContract`, `AbiAccessor`). Cargo
 # `[patch]` cannot bridge them ("patches must point to different sources").
@@ -50,7 +50,7 @@ single-wasm = ["wasm"]
 dex = ["dep:dodex-contracts"]
 
 [dependencies]
-ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v5.0.0", optional = true, default-features = false }
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v5.1.0", optional = true, default-features = false }
 base64 = "0.22.1"
 bech32 = "0.9.1"
 bee-errors = { path = "../bee_errors", default-features = false }
@@ -106,7 +106,7 @@ dodex-contracts = { git = "https://github.com/gosh-sh/dodex-backend.git", rev = 
 # crates (e.g. errno) into wasm32 and fails to compile. The matching test files
 # are guarded with `#![cfg(not(target_arch = "wasm32"))]`.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v5.0.0", features = ["default", "contracts"] }
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v5.1.0", features = ["default", "contracts"] }
 base64 = "0.22.1"
 bee-connect = { path = "../bee_connect" }
 bee-crypto = { path = "../bee_crypto" }
