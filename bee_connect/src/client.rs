@@ -30,6 +30,7 @@ use crate::message::encrypt_connect_body;
 use crate::message::normalize_owner_public_hex;
 use crate::message::normalize_uint256_hex;
 use crate::message::CONNECT_DEEPLINK_VERSION;
+use crate::message::CONNECT_DEEPLINK_VERSION_COMPACT;
 use crate::message::CONNECT_MESSAGE_ENC_NONE;
 use crate::message::CONNECT_MESSAGE_ENC_XCHACHA20POLY1305_HKDF_SHA256;
 use crate::message::CONNECT_MESSAGE_TYPE_CHALLENGE_RESPONSE;
@@ -443,9 +444,15 @@ pub struct ChallengeResponseBody {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectPayload {
     pub v: String,
+    /// Session id. `description` already carries it, and the `dl/2` payload leaves it out of the
+    /// wire for that reason; the decoder fills it in from there, so every consumer keeps seeing
+    /// it whichever version arrived.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub session_id: String,
     pub description: String,
     pub expires_at: u64,
+    /// Application id, carried by `description` on the same terms as `session_id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub app_id: String,
     /// Optional challenge nonce for inline wallet ownership verification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -544,11 +551,38 @@ impl ConnectClient {
     /// to `wait_wallet_hello` for DH key agreement.
     ///
     /// **No secrets are transmitted in the URL.**
+    /// [`Self::create_shared_key_session`], with the deeplink payload in `dl/2`: the same session
+    /// and the same `description`, without the `session_id` and `app_id` copies that `dl/1` sends
+    /// beside it.
+    ///
+    /// Nothing about the rendezvous changes — `description` is built and used exactly as before,
+    /// so the derived profile address is the same one `dl/1` would have produced for this session.
+    /// What changes is only what travels in the URL, and therefore how large the QR code is: a
+    /// 672-character link becomes 449, and the symbol drops from version 18 to version 15.
+    ///
+    /// Callers must not reach for this until the wallets they connect to decode `dl/2`; the
+    /// decoder in this crate accepts both from the moment this lands, the wallet does not.
+    pub fn create_shared_key_session_compact(
+        &self,
+        params: ParamsOfCreateSharedKeySession,
+    ) -> Result<ResultOfCreateSharedKeySession, crate::errors::AppError> {
+        self.create_shared_key_session_versioned(params, CONNECT_DEEPLINK_VERSION_COMPACT)
+    }
+
     pub fn create_shared_key_session(
         &self,
         params: ParamsOfCreateSharedKeySession,
     ) -> Result<ResultOfCreateSharedKeySession, crate::errors::AppError> {
-        let common = self.create_session_common(params.app_id, params.ttl_secs, params.nonce)?;
+        self.create_shared_key_session_versioned(params, CONNECT_DEEPLINK_VERSION)
+    }
+
+    fn create_shared_key_session_versioned(
+        &self,
+        params: ParamsOfCreateSharedKeySession,
+        version: &str,
+    ) -> Result<ResultOfCreateSharedKeySession, crate::errors::AppError> {
+        let common =
+            self.create_session_common(params.app_id, params.ttl_secs, params.nonce, version)?;
         let dh_keypair = crate::dh::generate_dh_keypair()?;
         let deep_link = format!(
             "{CONNECT_DEEPLINK_RESOLVER_URL}{CONNECT_DEEPLINK_PATH}?payload={}&client_dh_public={}",
@@ -1210,10 +1244,32 @@ pub fn decode_connect_payload_b64url(
         crate::errors::AppError::from(e).with_context("Deserialize connect payload")
     })?;
 
+    // `description` is the rendezvous id and is authoritative: on `dl/1` the two fields below are
+    // sent beside it and checked against it, and on `dl/2` they are not sent at all. Recovering
+    // them here, before any other step, is what lets both versions leave this function in the same
+    // shape, and it is not a new trust assumption -- `dl/1` already refuses a payload that
+    // disagrees with its own description.
+    let parsed_description = parse_connect_description(&payload.description);
+    if payload.session_id.trim().is_empty() {
+        payload.session_id = parsed_description
+            .session_id
+            .clone()
+            .ok_or_else(|| -> crate::errors::AppError {
+                "connect payload carries no session_id and its description has none".to_string().into()
+            })?;
+    }
+    if payload.app_id.trim().is_empty() {
+        payload.app_id = parsed_description
+            .app_id
+            .clone()
+            .ok_or_else(|| -> crate::errors::AppError {
+                "connect payload carries no app_id and its description has none".to_string().into()
+            })?;
+    }
+
     validate_connect_payload_shape(&payload)?;
     payload.app_id = normalize_uint256_hex(&payload.app_id)?;
 
-    let parsed_description = parse_connect_description(&payload.description);
     if parsed_description.app_id.as_deref() != Some(payload.app_id.as_str()) {
         return Err("connect payload description app_id mismatch".to_string().into());
     }
@@ -1240,6 +1296,7 @@ impl ConnectClient {
         app_id: String,
         ttl_secs: Option<u64>,
         nonce: Option<String>,
+        version: &str,
     ) -> Result<SessionCommon, crate::errors::AppError> {
         let now_secs = now_secs()?;
         let ttl_secs = ttl_secs.unwrap_or(DEFAULT_CONNECT_TTL_SECS).max(1);
@@ -1251,12 +1308,16 @@ impl ConnectClient {
             random_token_b64url(16)?,
         );
 
+        // `dl/2` leaves out what `description` already carries. Both fields are skipped when
+        // empty, so this is the whole of the difference on the wire; `description` itself, and
+        // therefore the rendezvous, is identical either way.
+        let compact = version == CONNECT_DEEPLINK_VERSION_COMPACT;
         let payload = ConnectPayload {
-            v: CONNECT_DEEPLINK_VERSION.to_string(),
-            session_id: session_id.clone(),
+            v: version.to_string(),
+            session_id: if compact { String::new() } else { session_id.clone() },
             description: description.clone(),
             expires_at,
-            app_id: app_id.clone(),
+            app_id: if compact { String::new() } else { app_id.clone() },
             nonce,
         };
         let payload_json = serde_json::to_string(&payload).map_err(|e| {
@@ -1803,10 +1864,10 @@ fn ensure_tx_success(
 }
 
 fn validate_connect_payload_shape(payload: &ConnectPayload) -> Result<(), crate::errors::AppError> {
-    if payload.v != CONNECT_DEEPLINK_VERSION {
+    if payload.v != CONNECT_DEEPLINK_VERSION && payload.v != CONNECT_DEEPLINK_VERSION_COMPACT {
         return Err(format!(
-            "Unsupported connect deeplink version `{}` (expected `{}`)",
-            payload.v, CONNECT_DEEPLINK_VERSION
+            "Unsupported connect deeplink version `{}` (expected `{}` or `{}`)",
+            payload.v, CONNECT_DEEPLINK_VERSION, CONNECT_DEEPLINK_VERSION_COMPACT
         )
         .into());
     }
@@ -2817,5 +2878,109 @@ mod tests {
         assert_eq!(parsed.nonce, None);
         assert_eq!(parsed.signature, None);
         assert_eq!(parsed.epk_public, None);
+    }
+
+    /// `dl/1` is untouched: both copies still travel, and a payload that disagrees with its own
+    /// description is still refused.
+    #[test]
+    fn dl1_still_carries_both_copies_and_still_checks_them() {
+        let session = ConnectClient::new()
+            .create_shared_key_session(ParamsOfCreateSharedKeySession {
+                app_id: "0x78".to_string(),
+                ttl_secs: Some(600),
+                nonce: None,
+            })
+            .expect("session");
+
+        assert!(session.payload_json.contains("\"session_id\""));
+        assert!(session.payload_json.contains("\"app_id\""));
+        assert!(session.payload_json.contains(CONNECT_DEEPLINK_VERSION));
+
+        let decoded = decode_connect_payload_b64url(&session.payload_b64url).expect("decode");
+        assert_eq!(decoded.session_id, session.session_id);
+        assert_eq!(decoded.description, session.description);
+    }
+
+    /// `dl/2` sends neither copy, and the decoder still hands the caller both -- recovered from
+    /// the description, which is authoritative in either version.
+    #[test]
+    fn dl2_omits_the_copies_and_the_decoder_restores_them() {
+        let session = ConnectClient::new()
+            .create_shared_key_session_compact(ParamsOfCreateSharedKeySession {
+                app_id: "0x78".to_string(),
+                ttl_secs: Some(600),
+                nonce: None,
+            })
+            .expect("session");
+
+        assert!(!session.payload_json.contains("\"session_id\""), "{}", session.payload_json);
+        assert!(!session.payload_json.contains("\"app_id\""), "{}", session.payload_json);
+        assert!(session.payload_json.contains(CONNECT_DEEPLINK_VERSION_COMPACT));
+
+        let decoded = decode_connect_payload_b64url(&session.payload_b64url).expect("decode");
+        assert_eq!(decoded.session_id, session.session_id);
+        assert_eq!(decoded.app_id, normalize_uint256_hex("0x78").expect("normalize"));
+        assert_eq!(decoded.description, session.description);
+    }
+
+    /// The rendezvous must not move: `description` is what the profile address is derived from, so
+    /// the two versions have to build it the same way for the same inputs.
+    #[test]
+    fn the_two_versions_build_the_same_description_shape() {
+        let client = ConnectClient::new();
+        let params = || ParamsOfCreateSharedKeySession {
+            app_id: "0x78".to_string(),
+            ttl_secs: Some(600),
+            nonce: None,
+        };
+        let one = client.create_shared_key_session(params()).expect("session");
+        let two = client.create_shared_key_session_compact(params()).expect("session");
+
+        for description in [&one.description, &two.description] {
+            let parsed = parse_connect_description(description);
+            assert_eq!(parsed.app_id, normalize_uint256_hex("0x78").ok());
+            assert!(parsed.session_id.is_some(), "{description}");
+        }
+        assert_eq!(
+            one.description.split(':').count(),
+            two.description.split(':').count()
+        );
+    }
+
+    /// The point of the change: the link a QR code has to carry gets shorter.
+    #[test]
+    fn dl2_link_is_shorter_than_dl1() {
+        let client = ConnectClient::new();
+        let params = || ParamsOfCreateSharedKeySession {
+            app_id: "0x78".to_string(),
+            ttl_secs: Some(600),
+            nonce: Some("a".repeat(64)),
+        };
+        let one = client.create_shared_key_session(params()).expect("session");
+        let two = client.create_shared_key_session_compact(params()).expect("session");
+
+        let saved = one.deep_link.len() - two.deep_link.len();
+        assert!(
+            saved >= 100,
+            "dl/1 {} vs dl/2 {}",
+            one.deep_link.len(),
+            two.deep_link.len()
+        );
+    }
+
+    /// A payload with neither the field nor a usable description is refused rather than
+    /// silently decoded into an empty session.
+    #[test]
+    fn a_payload_without_either_source_of_the_session_id_is_refused() {
+        let payload = serde_json::json!({
+            "v": CONNECT_DEEPLINK_VERSION_COMPACT,
+            "description": "not-a-bee-connect-description",
+            "expires_at": 1_800_000_000u64,
+        })
+        .to_string();
+        let encoded = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+
+        let error = decode_connect_payload_b64url(&encoded).expect_err("must refuse");
+        assert!(format!("{error}").contains("session_id"), "{error}");
     }
 }

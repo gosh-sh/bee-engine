@@ -18,6 +18,14 @@ use sha2::Sha256;
 // --- Protocol constants ---
 
 pub const CONNECT_DEEPLINK_VERSION: &str = "bee_connect.dl/1";
+/// Same session, same `description`, same rendezvous — without the `session_id` and `app_id`
+/// copies that `dl/1` sends beside a description that already holds both.
+///
+/// The link is shown as a QR code on any desktop client, because the wallet is a phone
+/// application, so its length decides the symbol version and whether the code fits a window.
+/// Dropping the two copies takes a 672-character link to 449 and the symbol from version 18 to
+/// version 15.
+pub const CONNECT_DEEPLINK_VERSION_COMPACT: &str = "bee_connect.dl/2";
 pub const CONNECT_MESSAGE_VERSION: &str = "bee_connect.msg/1";
 pub const CONNECT_MESSAGE_TYPE_WALLET_HELLO: &str = "wallet_hello";
 pub const CONNECT_MESSAGE_TYPE_CLIENT_DISCONNECT: &str = "client_disconnect";
