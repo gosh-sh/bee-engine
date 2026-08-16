@@ -23,8 +23,8 @@ pub const CONNECT_DEEPLINK_VERSION: &str = "bee_connect.dl/1";
 ///
 /// The link is shown as a QR code on any desktop client, because the wallet is a phone
 /// application, so its length decides the symbol version and whether the code fits a window.
-/// Dropping the two copies takes a 672-character link to 449 and the symbol from version 18 to
-/// version 15.
+/// Dropping the two copies takes a 672-character link to 517 and the symbol from version 18 to
+/// version 16.
 pub const CONNECT_DEEPLINK_VERSION_COMPACT: &str = "bee_connect.dl/2";
 pub const CONNECT_MESSAGE_VERSION: &str = "bee_connect.msg/1";
 pub const CONNECT_MESSAGE_TYPE_WALLET_HELLO: &str = "wallet_hello";

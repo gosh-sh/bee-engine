@@ -558,7 +558,7 @@ impl ConnectClient {
     /// Nothing about the rendezvous changes — `description` is built and used exactly as before,
     /// so the derived profile address is the same one `dl/1` would have produced for this session.
     /// What changes is only what travels in the URL, and therefore how large the QR code is: a
-    /// 672-character link becomes 449, and the symbol drops from version 18 to version 15.
+    /// 672-character link becomes 517, and the symbol drops from version 18 to version 16.
     ///
     /// Callers must not reach for this until the wallets they connect to decode `dl/2`; the
     /// decoder in this crate accepts both from the moment this lands, the wallet does not.
