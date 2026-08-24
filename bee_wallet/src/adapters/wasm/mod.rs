@@ -792,8 +792,8 @@ pub async fn deploy_multisig_via_giver(
 }
 
 /// Free function: ECC balances of any account by address as
-/// `{ currency_id: raw_amount_string }`. Generic — works on a flat multisig,
-/// unlike the multifactor-specific balance reader.
+/// `{ currency_id: raw_amount_string }`. Generic — works on the canonical
+/// Multisig, unlike the multifactor-specific balance reader.
 #[wasm_bindgen(js_name = multisig_balances)]
 pub async fn multisig_balances(
     params: dto::multisig::TParamsOfMultisigBalances,
@@ -835,72 +835,49 @@ fn serialize_ecc_balances(
         .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
-/// The `code` selector is a string-or-object union, and it crosses the boundary
-/// through `serde_wasm_bindgen`, not `serde_json` — so the native unit tests do
-/// not cover the shape a frontend actually sends. These run under
+/// Pins the canonical Multisig DTO at the actual JS boundary. These run under
 /// `wasm-pack test --node`.
 #[cfg(all(test, target_arch = "wasm32"))]
-mod multisig_code_selector_tests {
+mod multisig_params_tests {
     use wasm_bindgen_test::*;
 
     use crate::services::multisig::ParamsOfDeployMultisigViaGiver;
 
-    /// Deserializes `{ endpoints, code }` exactly as the wasm entry point does.
     fn params_from_js(
-        code: wasm_bindgen::JsValue,
+        balance_config: Option<wasm_bindgen::JsValue>,
+        removed_code: Option<wasm_bindgen::JsValue>,
     ) -> Result<ParamsOfDeployMultisigViaGiver, String> {
         let params = js_sys::Object::new();
         let endpoints = js_sys::Array::new();
         endpoints.push(&wasm_bindgen::JsValue::from_str("https://example.invalid"));
         js_sys::Reflect::set(&params, &"endpoints".into(), &endpoints).unwrap();
-        js_sys::Reflect::set(&params, &"code".into(), &code).unwrap();
+        if let Some(balance_config) = balance_config {
+            js_sys::Reflect::set(&params, &"balance_config".into(), &balance_config).unwrap();
+        }
+        if let Some(code) = removed_code {
+            js_sys::Reflect::set(&params, &"code".into(), &code).unwrap();
+        }
         serde_wasm_bindgen::from_value(params.into()).map_err(|e| format!("{e:?}"))
     }
 
-    /// `code: "update_custodian_v2"` — a plain JS string must select the
-    /// vendored build (serde_wasm_bindgen routes strings through
-    /// `deserialize_any`).
     #[wasm_bindgen_test]
-    fn named_build_arrives_as_a_js_string() {
-        let params = params_from_js(wasm_bindgen::JsValue::from_str("update_custodian_v2"))
-            .expect("named build must deserialize");
-        let code = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
-            .expect("named build must resolve");
-        assert!(!code.tvc.is_empty());
-        assert!(code.abi.contains("submitUpdateCode"), "must be the v2 ABI");
+    fn balance_config_crosses_the_js_boundary() {
+        let balance = js_sys::Object::new();
+        js_sys::Reflect::set(&balance, &"min_balance".into(), &"1000000000".into()).unwrap();
+        js_sys::Reflect::set(&balance, &"target_balance".into(), &"2000000000".into()).unwrap();
+
+        let params = params_from_js(Some(balance.into()), None).expect("params must deserialize");
+        let config = params.balance_config.expect("balance config");
+        assert_eq!(config.min_balance, "1000000000");
+        assert_eq!(config.target_balance, "2000000000");
     }
 
-    /// `code: { tvc_b64, abi }` with `abi` as an imported JS **object** — the
-    /// ergonomic shape. A plain object must survive `deserialize_any` into
-    /// `serde_json::Value`; if it didn't, this is where it would show.
     #[wasm_bindgen_test]
-    fn custom_build_accepts_object_abi() {
-        let abi = js_sys::JSON::parse(r#"{"functions":[{"name":"constructor"}]}"#).unwrap();
-        let code = js_sys::Object::new();
-        js_sys::Reflect::set(&code, &"tvc_b64".into(), &"AQID".into()).unwrap();
-        js_sys::Reflect::set(&code, &"abi".into(), &abi).unwrap();
-
-        let params = params_from_js(code.into()).expect("custom build must deserialize");
-        let resolved = crate::services::multisig::MultisigCode::try_from(params.code.unwrap())
-            .expect("custom build must convert");
-        assert_eq!(resolved.tvc, vec![1, 2, 3]);
-        assert!(resolved.abi.starts_with('{'), "object ABI must render as JSON: {}", resolved.abi);
-    }
-
-    /// Omitting `code` keeps the default build.
-    #[wasm_bindgen_test]
-    fn absent_code_is_none() {
-        let params = params_from_js(wasm_bindgen::JsValue::UNDEFINED).expect("must deserialize");
-        assert!(params.code.is_none());
-    }
-
-    /// Half a pair must fail with the message that names the missing half.
-    #[wasm_bindgen_test]
-    fn half_a_pair_is_rejected_with_a_useful_message() {
-        let code = js_sys::Object::new();
-        js_sys::Reflect::set(&code, &"tvc_b64".into(), &"AQID".into()).unwrap();
-        let err = params_from_js(code.into()).expect_err("half a pair must not deserialize");
-        assert!(err.contains("`code.abi` is missing"), "got: {err}");
+    fn removed_code_selector_is_rejected() {
+        let err =
+            params_from_js(None, Some(wasm_bindgen::JsValue::from_str("update_custodian_v2_4")))
+                .expect_err("removed selector must not silently fall back");
+        assert!(err.contains("unknown field `code`"), "got: {err}");
     }
 }
 

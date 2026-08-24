@@ -8,6 +8,13 @@ use ackinacki_kit::tvm_client::ClientContext;
 use base64::Engine;
 use bee_crypto::Crypto;
 
+const EXPLICIT_AGENT_PATH: &str = "m/44'/1331'/0'/1/0";
+const KNOWN_24_WORD_PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+const KNOWN_24_WORD_DEFAULT_PUBLIC_KEY: &str =
+    "a735f5004a58b190eaad81a090c4ebdcdce2ad58fb13352fbf5a6dec2c9a5c4f";
+const KNOWN_24_WORD_EXPLICIT_PATH_PUBLIC_KEY: &str =
+    "ae088fe12f111563ef288e51a87f0b877ee4c89384c4487e1b2db6b09ae4e92e";
+
 fn create_crypto() -> Crypto {
     let endpoints = vec!["mainnet.ackinacki.org".to_string()];
     Crypto::new(endpoints).expect("Failed to create Crypto")
@@ -63,7 +70,7 @@ fn test_decrypt_wrong_password_fails() {
 #[test]
 fn test_gen_mnemonic_and_derive_keys() {
     let crypto = create_crypto();
-    let result = crypto.gen_mnemonic_and_derive_keys().unwrap();
+    let result = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
     let words: Vec<&str> = result.phrase.split_whitespace().collect();
     assert_eq!(words.len(), 24);
     assert!(!result.keys.public.is_empty());
@@ -73,9 +80,9 @@ fn test_gen_mnemonic_and_derive_keys() {
 #[test]
 fn test_get_keys_from_mnemonic_matches_gen() {
     let crypto = create_crypto();
-    let generated = crypto.gen_mnemonic_and_derive_keys().unwrap();
+    let generated = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
 
-    let derived = crypto.get_keys_from_mnemonic(generated.phrase.clone()).unwrap();
+    let derived = crypto.get_keys_from_mnemonic(generated.phrase.clone(), 24).unwrap();
     assert_eq!(derived.public, generated.keys.public);
     assert_eq!(derived.secret, generated.keys.secret);
 }
@@ -83,23 +90,27 @@ fn test_get_keys_from_mnemonic_matches_gen() {
 #[test]
 fn test_verify_mnemonic_valid() {
     let crypto = create_crypto();
-    let generated = crypto.gen_mnemonic_and_derive_keys().unwrap();
-    let is_valid = crypto.verify_mnemonic(generated.phrase).unwrap();
+    let generated = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
+    let is_valid = crypto.verify_mnemonic(generated.phrase, 24).unwrap();
     assert!(is_valid);
 }
 
 #[test]
 fn test_verify_mnemonic_invalid() {
     let crypto = create_crypto();
-    let is_valid =
-        crypto.verify_mnemonic("this is not a valid mnemonic phrase at all".to_string()).unwrap();
+    let is_valid = crypto
+        .verify_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon".to_string(),
+            24,
+        )
+        .unwrap();
     assert!(!is_valid);
 }
 
 #[test]
 fn test_sign_deterministic() {
     let crypto = create_crypto();
-    let keys = crypto.gen_mnemonic_and_derive_keys().unwrap();
+    let keys = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
 
     let params = ParamsOfSign {
         unsigned: base64::engine::general_purpose::STANDARD.encode(b"test message"),
@@ -121,7 +132,7 @@ fn test_sign_deterministic() {
 #[test]
 fn test_verify_signature_roundtrip() {
     let crypto = create_crypto();
-    let keys = crypto.gen_mnemonic_and_derive_keys().unwrap();
+    let keys = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
 
     let sign_result = crypto
         .sign(ParamsOfSign {
@@ -188,7 +199,7 @@ fn test_from_client_context() {
 #[test]
 fn test_sign_detached_hex() {
     let crypto = create_crypto();
-    let generated = crypto.gen_mnemonic_and_derive_keys().unwrap();
+    let generated = crypto.gen_mnemonic_and_derive_keys(24).unwrap();
     let secret = generated.keys.secret;
 
     let hex_data = hex::encode(b"test payload");
@@ -240,7 +251,61 @@ fn test_verify_salted_hash() {
     assert!(!bad, "wrong password should not verify");
 
     // Corrupted hash fails
-    let corrupted = format!("v3:0000:ffff");
+    let corrupted = "v3:0000:ffff".to_string();
     let result = crypto.verify_password_hash("my_secret_value".to_string(), corrupted);
     assert!(result.is_err() || !result.unwrap());
+}
+
+#[test]
+fn test_12_word_mnemonic_round_trip() {
+    let crypto = create_crypto();
+    let generated = crypto.gen_mnemonic_and_derive_keys(12).unwrap();
+
+    assert_eq!(generated.phrase.split_whitespace().count(), 12);
+    assert!(crypto.verify_mnemonic(generated.phrase.clone(), 12).unwrap());
+
+    let derived = crypto
+        .get_keys_from_mnemonic_with_path(generated.phrase, EXPLICIT_AGENT_PATH.to_string(), 12)
+        .unwrap();
+    assert!(!derived.public.is_empty());
+    assert!(!derived.secret.is_empty());
+}
+
+#[test]
+fn test_24_word_mnemonic_regression_vectors() {
+    let crypto = create_crypto();
+
+    let default_keys = crypto.get_keys_from_mnemonic(KNOWN_24_WORD_PHRASE.to_string(), 24).unwrap();
+    assert_eq!(default_keys.public, KNOWN_24_WORD_DEFAULT_PUBLIC_KEY);
+
+    let explicit_keys = crypto
+        .get_keys_from_mnemonic_with_path(
+            KNOWN_24_WORD_PHRASE.to_string(),
+            EXPLICIT_AGENT_PATH.to_string(),
+            24,
+        )
+        .unwrap();
+    assert_eq!(explicit_keys.public, KNOWN_24_WORD_EXPLICIT_PATH_PUBLIC_KEY);
+}
+
+#[test]
+fn test_mnemonic_word_count_mismatch_fails_before_derivation() {
+    let crypto = create_crypto();
+    let generated = crypto.gen_mnemonic_and_derive_keys(12).unwrap();
+
+    let default_path_error =
+        crypto.get_keys_from_mnemonic(generated.phrase.clone(), 24).unwrap_err();
+    assert!(default_path_error.message.contains("expected 24, got 12"));
+
+    let explicit_path_error = crypto
+        .get_keys_from_mnemonic_with_path(
+            generated.phrase.clone(),
+            EXPLICIT_AGENT_PATH.to_string(),
+            24,
+        )
+        .unwrap_err();
+    assert!(explicit_path_error.message.contains("expected 24, got 12"));
+
+    let verify_error = crypto.verify_mnemonic(generated.phrase, 24).unwrap_err();
+    assert!(verify_error.message.contains("expected 24, got 12"));
 }
