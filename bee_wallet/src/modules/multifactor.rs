@@ -96,7 +96,7 @@ impl<'a> MultifactorModule<'a> {
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         self.ctx.acquire().await;
         let multifactor_contract = MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let multifactor = Arc::new(multifactor_contract);
@@ -124,7 +124,7 @@ impl<'a> MultifactorModule<'a> {
         params: ParamsOfGetMultifactorAddress,
     ) -> AppResult<ResultOfGetMvMultifactorAddress> {
         self.ctx.acquire().await;
-        let contract = MobileVerifiersRoot::new_default(self.ctx.tvm_client.clone());
+        let contract = MobileVerifiersRoot::new_default(self.ctx.contract_context.clone());
         let result = contract
             .get_mv_multifactor(ParamsOfGetMvMultifactor { public: params.pubkey })
             .await
@@ -139,9 +139,11 @@ impl<'a> MultifactorModule<'a> {
         &self,
         params: ParamsGetMirrorAddress,
     ) -> AppResult<ResultGetMirrorAddress> {
-        let mirror =
-            resolve_mirror(self.ctx.tvm_client.clone(), MirrorSelector::ForPubkey(&params.pubkey))
-                .map_err(|e| e.with_context("Get mirror"))?;
+        let mirror = resolve_mirror(
+            self.ctx.contract_context.clone(),
+            MirrorSelector::ForPubkey(&params.pubkey),
+        )
+        .map_err(|e| e.with_context("Get mirror"))?;
         Ok(ResultGetMirrorAddress { address: mirror.address().to_string() })
     }
 
@@ -151,7 +153,7 @@ impl<'a> MultifactorModule<'a> {
     ) -> AppResult<ResultOfGetMultifactorInfo> {
         self.ctx.acquire().await;
         let contract =
-            MvMultifactor::new_default(self.ctx.tvm_client.clone(), params.address.clone());
+            MvMultifactor::new_default(self.ctx.contract_context.clone(), params.address.clone());
 
         if !contract.is_deployed().await {
             return Ok(ResultOfGetMultifactorInfo { data: None });
@@ -172,7 +174,7 @@ impl<'a> MultifactorModule<'a> {
     ) -> AppResult<crate::types::GetEPKExpireRes> {
         self.ctx.acquire().await;
         let multifactor = MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let epk_expire_at = multifactor
@@ -255,7 +257,7 @@ impl<'a> MultifactorModule<'a> {
         .await?;
 
         let contract_raw =
-            MvMultifactor::new_default(self.ctx.tvm_client.clone(), params.address.clone());
+            MvMultifactor::new_default(self.ctx.contract_context.clone(), params.address.clone());
         let contract = Arc::new(contract_raw);
 
         let update_zk_id_result = contract
@@ -332,7 +334,7 @@ impl<'a> MultifactorModule<'a> {
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         self.ctx.acquire().await;
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let message_ids = update_contract_flags(multifactor, params.keys, true).await?;
@@ -368,40 +370,18 @@ pub(crate) async fn update_contract_flags(
     let mut message_ids = Vec::new();
 
     if need_remove_oldest {
-        let mf = multifactor.clone();
-        let k = keys.clone();
-        let message_id = crate::infra::with_retry(
-            move || {
-                let mf = mf.clone();
-                let k = k.clone();
-                async move { set_remove_oldest(&mf, k, true).await }
-            },
-            3,
-            3000,
-            None::<fn(&crate::errors::AppError) -> bool>,
-        )
-        .await
-        .map_err(|e| e.with_context("Set force to remove oldest failure"))?;
+        let message_id = set_remove_oldest(&multifactor, keys.clone(), true)
+            .await
+            .map_err(|e| e.with_context("Set force to remove oldest failure"))?;
         if let Some(id) = message_id {
             message_ids.push(id);
         }
     }
 
     if need_wasm_hash {
-        let mf = multifactor.clone();
-        let k = keys.clone();
-        let message_id = crate::infra::with_retry(
-            move || {
-                let mf = mf.clone();
-                let k = k.clone();
-                async move { set_wasm_hash(&mf, k, WASM_HASH).await }
-            },
-            3,
-            3000,
-            None::<fn(&crate::errors::AppError) -> bool>,
-        )
-        .await
-        .map_err(|e| e.with_context("Set wasm hash failure"))?;
+        let message_id = set_wasm_hash(&multifactor, keys.clone(), WASM_HASH)
+            .await
+            .map_err(|e| e.with_context("Set wasm hash failure"))?;
         if let Some(id) = message_id {
             message_ids.push(id);
         }

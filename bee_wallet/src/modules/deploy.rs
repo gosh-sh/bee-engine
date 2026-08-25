@@ -107,7 +107,7 @@ impl<'a> DeployModule<'a> {
             secret: generated.keys.secret.clone(),
         };
 
-        let root_contract = MobileVerifiersRoot::new_default(self.ctx.tvm_client.clone());
+        let root_contract = MobileVerifiersRoot::new_default(self.ctx.contract_context.clone());
         let multifactor = root_contract
             .get_mv_multifactor(ParamsOfGetMvMultifactor {
                 public: format!("0x{}", owner_keys.public.clone()),
@@ -143,7 +143,7 @@ impl<'a> DeployModule<'a> {
         .map_err(|e| e.with_context("Failed to prepare params"))?;
 
         let deploy_multifactor_mirror = resolvers::resolve_mirror(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             MirrorSelector::ForPubkey(&owner_keys.public),
         )
         .map_err(|e| e.with_context("Failed to get mirror"))?;
@@ -188,19 +188,10 @@ impl<'a> DeployModule<'a> {
         }
         if pending_stage.is_none() && should_update_contract_flags {
             crate::progress::emit(progress.as_ref(), ProgressEvent::new("deploy", "configuring"));
-            let mf = multifactor_arc.clone();
-            let update_contract_message_ids = crate::infra::with_retry(
-                || {
-                    let mf = mf.clone();
-                    let owner_keys = owner_keys.clone();
-                    async move {
-                        crate::modules::multifactor::update_contract_flags(mf, owner_keys, true)
-                            .await
-                    }
-                },
-                3,
-                1_000,
-                None::<fn(&crate::errors::AppError) -> bool>,
+            let update_contract_message_ids = crate::modules::multifactor::update_contract_flags(
+                multifactor_arc.clone(),
+                owner_keys.clone(),
+                true,
             )
             .await;
             match update_contract_message_ids {
@@ -253,7 +244,7 @@ impl<'a> DeployModule<'a> {
         progress: Option<ProgressSink>,
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         let miner = resolvers::resolve_miner_for_multifactor(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &params.multifactor_address,
         )
         .await
@@ -265,7 +256,7 @@ impl<'a> DeployModule<'a> {
 
         let ephemeral_signer = Signer::Keys { keys: params.signer_keys.clone() };
         let multifactor = Multifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let epk_expire_at = multifactor
@@ -279,7 +270,7 @@ impl<'a> DeployModule<'a> {
 
         crate::progress::emit(progress.as_ref(), ProgressEvent::new("deploy_miner", "deploying"));
         let deploy_miner_result = services::miner::cmd::deploy_miner(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &multifactor_arc,
             &ephemeral_signer,
             epk_expire_at,

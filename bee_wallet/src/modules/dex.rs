@@ -37,7 +37,7 @@ impl<'a> DexModule<'a> {
         self.ctx.acquire().await;
 
         let multifactor = Multifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let epk_expire_at = multifactor

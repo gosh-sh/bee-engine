@@ -1,3 +1,5 @@
+#[cfg(feature = "message-delivery")]
+pub mod message_delivery;
 mod rate_limiter;
 pub mod retry;
 pub use rate_limiter::maybe_acquire;

@@ -33,6 +33,7 @@ pub use adapters::native::Wallet;
 pub use adapters::wasm;
 #[cfg(all(feature = "wasm", target_arch = "wasm32"))]
 pub use adapters::wasm::Wallet;
+pub use bee_infra::message_delivery::contract_context as wallet_contract_context;
 pub use client::WalletConfig;
 pub use infra::now_secs;
 pub use progress::ProgressEvent;

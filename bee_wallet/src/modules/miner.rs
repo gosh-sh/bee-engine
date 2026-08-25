@@ -36,7 +36,7 @@ impl<'a> MinerModule<'a> {
     pub async fn get_miner_address(&self, multifactor_address: &str) -> AppResult<String> {
         self.ctx.acquire().await;
         let miner = services::resolvers::resolve_miner_for_multifactor(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             multifactor_address,
         )
         .await?;
@@ -49,7 +49,7 @@ impl<'a> MinerModule<'a> {
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         self.ctx.acquire().await;
         let miner = services::resolvers::resolve_miner_for_multifactor(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &params.multifactor_address,
         )
         .await
@@ -61,7 +61,7 @@ impl<'a> MinerModule<'a> {
 
         let ephemeral_signer = Signer::Keys { keys: params.signer_keys.clone() };
         let multifactor = Multifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let miner_arc = Arc::new(miner);
@@ -84,7 +84,7 @@ impl<'a> MinerModule<'a> {
         let app_id = if params.app_id.is_empty() { self.ctx.app_id.clone() } else { params.app_id };
 
         let message_ids = services::miner::cmd::set_mining_keys(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &miner_arc,
             &multifactor_arc,
             params.mining_pubkey.clone(),
@@ -104,7 +104,7 @@ impl<'a> MinerModule<'a> {
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         self.ctx.acquire().await;
         let miner = services::resolvers::resolve_miner_for_multifactor(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &params.multifactor_address,
         )
         .await
@@ -116,7 +116,7 @@ impl<'a> MinerModule<'a> {
 
         let ephemeral_signer = Signer::Keys { keys: params.signer_keys.clone() };
         let multifactor = Multifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let miner_arc = Arc::new(miner);
@@ -139,7 +139,7 @@ impl<'a> MinerModule<'a> {
         let app_id = if params.app_id.is_empty() { self.ctx.app_id.clone() } else { params.app_id };
 
         let message_ids = services::miner::cmd::del_mining_key(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &miner_arc,
             &multifactor_arc,
             epk_expire_at,

@@ -60,59 +60,15 @@ pub fn is_confirmation_pending_error(err: &crate::errors::AppError) -> bool {
         || err.message.contains("timeout")
 }
 
-/// Classifier for transient HTTP / network errors surfaced by tvm_client.
-///
-/// Mirrors the ticket's retryable-class table: retry on 5xx / 408 / 425 /
-/// 429 / connect errors / TCP resets / DNS / timeouts. Fail fast on 4xx
-/// outside that subset.
-///
-/// We work with [`AppError`](crate::errors::AppError) — a freeform string
-/// envelope — because tvm_client strips response headers and only the
-/// numeric `server_code` (from GraphQL extensions) and the message text
-/// reliably propagate. `Retry-After` cannot be observed at this layer
-/// (see `bee_infra::retry` doc).
-///
-/// Available for opt-in use by callers that want HTTP-transient retries
-/// (combine with [`with_retry`] via the `should_retry` parameter). Used by
-/// the multisig giver/deploy path (`services::multisig::send_should_retry`);
-/// not wired into high-level read methods by default — that decision belongs
-/// to the caller per the retry-policy ticket.
-pub fn is_retryable_http_transient(err: &crate::errors::AppError) -> bool {
-    // tvm_client::ErrorCode::HttpRequestSendError == 11.
-    if err.error_code.as_deref() == Some("11") {
-        return true;
-    }
-
-    let has_transient_network_hint = |s: &str| {
-        s.contains("connection reset by peer")
-            || s.contains("dns error")
-            || s.contains("failed to lookup address information")
-            || s.contains("client error (SendRequest)")
-            || s.contains("client error (Connect)")
-            || s.contains("timed out")
-            || s.contains("timeout")
-            || s.contains("server_code: 408")
-            || s.contains("server_code: 425")
-            || s.contains("server_code: 429")
-            || s.contains("server_code: 500")
-            || s.contains("server_code: 502")
-            || s.contains("server_code: 503")
-            || s.contains("server_code: 504")
-    };
-
-    has_transient_network_hint(&err.message)
-        || err.details.as_deref().is_some_and(has_transient_network_hint)
-}
-
 /// Bounded, classified retry around `op`. Preserves the legacy
 /// signature so existing callers (deploy, multifactor flows) don't
 /// have to change — internally delegates to
-/// [`bee_infra::retry::with_retry_policy`].
+/// [`bee_infra::retry::with_retry_policy`]. This helper is not used for
+/// on-chain sends; message delivery is owned by `message_delivery`.
 ///
 /// Built-in classifier: TVM exit codes 52 / 621 / 623 (contract-level
 /// transients). Callers can OR in their own `should_retry` predicate
-/// — typical use is HTTP-transient hints via
-/// [`is_retryable_http_transient`].
+/// when a read operation has an additional retryable condition.
 pub async fn with_retry<T, Op, Fut, ShouldRetry>(
     op: Op,
     max_attempts: u32,

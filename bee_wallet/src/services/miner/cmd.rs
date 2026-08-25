@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use ackinacki_kit::contracts::account::AccountStatus;
 use ackinacki_kit::contracts::account::ParamsOfWaitAccount;
+use ackinacki_kit::contracts::delivery::ContractContext;
 use ackinacki_kit::contracts::mvsystem::miner::contract::Miner;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfEncodeRemoveOwnerPublic;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfEncodeSetOwnerPublic;
@@ -12,7 +13,6 @@ use ackinacki_kit::contracts::mvsystem::ContractIndex;
 use ackinacki_kit::contracts::traits::AccountAccessor;
 use ackinacki_kit::contracts::traits::AddressAccessor;
 use ackinacki_kit::tvm_client::abi::Signer;
-use ackinacki_kit::tvm_client::ClientContext;
 
 use crate::services;
 use crate::services::multifactor::whitelist::ParamsOfUpdateMultifactorWhiteList;
@@ -29,17 +29,15 @@ pub struct ResultOfDeployMiner {
 }
 
 pub async fn deploy_miner(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     multifactor: &Arc<Multifactor>,
     signer: &Signer,
     epk_expire_at: u64,
 ) -> crate::errors::AppResult<ResultOfDeployMiner> {
-    let mirror = resolve_mirror(
-        tvm_client.clone(),
-        MirrorSelector::ForMultifactorAddr(multifactor.address()),
-    )?;
+    let mirror =
+        resolve_mirror(context.clone(), MirrorSelector::ForMultifactorAddr(multifactor.address()))?;
 
-    let miner = resolve_miner_for_multifactor(tvm_client, multifactor.address()).await?;
+    let miner = resolve_miner_for_multifactor(context, multifactor.address()).await?;
     let miner = Arc::new(miner);
 
     let whitelist_result = services::multifactor::whitelist::update_multifactor_whitelist_and_wait(
@@ -107,7 +105,7 @@ pub async fn deploy_miner(
 }
 
 pub async fn set_mining_keys(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     miner: &Arc<Miner>,
     multifactor: &Arc<Multifactor>,
     mining_pubkey: String,
@@ -116,7 +114,7 @@ pub async fn set_mining_keys(
     signer: &Signer,
 ) -> crate::errors::AppResult<Vec<String>> {
     let mirror =
-        resolve_mirror(tvm_client, MirrorSelector::ForMultifactorAddr(multifactor.address()))?;
+        resolve_mirror(context, MirrorSelector::ForMultifactorAddr(multifactor.address()))?;
 
     let whitelist_result = services::multifactor::whitelist::update_multifactor_whitelist_and_wait(
         multifactor,
@@ -199,7 +197,7 @@ pub async fn set_mining_keys(
 }
 
 pub async fn del_mining_key(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     miner: &Arc<Miner>,
     multifactor: &Arc<Multifactor>,
     epk_expire_at: u64,
@@ -208,7 +206,7 @@ pub async fn del_mining_key(
     signer: &Signer,
 ) -> crate::errors::AppResult<Vec<String>> {
     let mirror =
-        resolve_mirror(tvm_client, MirrorSelector::ForMultifactorAddr(multifactor.address()))?;
+        resolve_mirror(context, MirrorSelector::ForMultifactorAddr(multifactor.address()))?;
 
     let whitelist_result = services::multifactor::whitelist::update_multifactor_whitelist_and_wait(
         multifactor,
