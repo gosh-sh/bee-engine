@@ -6,6 +6,7 @@ members = [
     "bee_miner",
     "bee_shared",
     "bee_verifier",
+    "bee_verifier_v2",
     "bee_wallet",
     "bee_connect",
     "bee_infra",
@@ -14,7 +15,8 @@ members = [
 ]
 # `bee_sdk` is the wasm-aggregator (forces `single-wasm` on its deps, which
 # leaks wasm-only code into native builds via feature unification).
-# `bee_verifier` targets `wasm32-wasip2` and won't build under the host target.
+# `bee_verifier` and `bee_verifier_v2` target `wasm32-wasip2` and won't build
+# under the host target.
 # Excluding both from default-members keeps `cargo run|build|test` from the
 # workspace root scoped to crates that compile cleanly natively.
 default-members = [
