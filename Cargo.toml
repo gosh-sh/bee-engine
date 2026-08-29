@@ -11,6 +11,7 @@ members = [
     "bee_infra",
     "bee_crypto",
     "bee_errors",
+    "tools/queue_overflow_proxy",
 ]
 # `bee_sdk` is the wasm-aggregator (forces `single-wasm` on its deps, which
 # leaks wasm-only code into native builds via feature unification).
