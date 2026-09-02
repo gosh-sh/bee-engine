@@ -22,9 +22,11 @@ pub async fn get_details_by_multifactor_address(
     tvm_client: Arc<ClientContext>,
     params: ParamsOfGetMinerDetails,
 ) -> crate::errors::AppResult<ResultOfGetMinerDetails> {
-    let miner =
-        services::resolvers::resolve_miner_for_multifactor(tvm_client, &params.multifactor_address)
-            .await?;
+    let miner = services::resolvers::resolve_miner_for_multifactor(
+        tvm_client.into(),
+        &params.multifactor_address,
+    )
+    .await?;
 
     let details = miner
         .get_details()

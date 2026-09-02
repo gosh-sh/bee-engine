@@ -64,8 +64,10 @@ impl<'a> ConnectModule<'a> {
         params: services::connect::ParamsOfDestroyConnectProfile,
     ) -> AppResult<crate::ResultOfBlockchainWrite> {
         self.ctx.acquire().await;
-        let profile =
-            AuthProfile::new_default(self.ctx.tvm_client.clone(), params.profile_address.clone());
+        let profile = AuthProfile::new_default(
+            self.ctx.contract_context.clone(),
+            params.profile_address.clone(),
+        );
         if !profile.is_deployed().await {
             return Ok(crate::ResultOfBlockchainWrite::default());
         }
@@ -92,7 +94,7 @@ impl<'a> ConnectModule<'a> {
         }
 
         let multifactor =
-            Multifactor::new_default(self.ctx.tvm_client.clone(), params.multifactor_address);
+            Multifactor::new_default(self.ctx.contract_context.clone(), params.multifactor_address);
         let epk_expire_at = multifactor
             .get_epk_expire_at(ParamsOfGetEpkExpire {
                 epk: format!("0x{}", params.signer_keys.public),
@@ -142,7 +144,7 @@ impl<'a> ConnectModule<'a> {
             .await
             .map_err(|e| AppError::from(e).with_context("connect query get_profile_address"))?
             .profile;
-        let profile = AuthProfile::new_default(self.ctx.tvm_client.clone(), &profile_address);
+        let profile = AuthProfile::new_default(self.ctx.contract_context.clone(), &profile_address);
 
         if !profile.is_deployed().await {
             return Ok(services::connect::ResultOfQuerySessionMessages {
@@ -301,7 +303,7 @@ impl<'a> ConnectModule<'a> {
             .await
             .map_err(|e| AppError::from(e).with_context("connect get_profile_address"))?
             .profile;
-        let profile = AuthProfile::new_default(self.ctx.tvm_client.clone(), &profile_address);
+        let profile = AuthProfile::new_default(self.ctx.contract_context.clone(), &profile_address);
 
         let pubkey_hash = root
             .hash_pubkey(ParamsOfHashPubkey { pubkey: format!("0x{}", owner_keys.public) })
@@ -419,5 +421,5 @@ async fn wait_profile_active(
 }
 
 fn connect_auth_root(ctx: &WalletContext) -> AuthServiceRoot {
-    AuthServiceRoot::new_default(ctx.tvm_client.clone())
+    AuthServiceRoot::new_default(ctx.contract_context.clone())
 }

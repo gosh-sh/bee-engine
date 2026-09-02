@@ -4,6 +4,7 @@ use std::sync::Arc;
 mod sell_orders;
 
 use ackinacki_kit::contracts::account::ParamsOfWaitAccount;
+use ackinacki_kit::contracts::delivery::ContractContext;
 use ackinacki_kit::contracts::exchange::exchange_contract::Exchange;
 use ackinacki_kit::contracts::mvsystem::multifactor::Multifactor;
 use ackinacki_kit::contracts::mvsystem::multifactor::ParamsOfSendTransaction;
@@ -274,7 +275,7 @@ pub async fn get_my_sell_orders(
 /// msg). The lot internally calls `AccumulatorRoot.claimUSDC()` to transfer
 /// USDC to seller.
 pub async fn claim_usdc(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     denom: u16,
     order_id: u64,
     signer: Signer,
@@ -285,7 +286,7 @@ pub async fn claim_usdc(
         )));
     }
 
-    let accumulator = ShellAccumulatorRootUsdc::new_default(tvm_client);
+    let accumulator = ShellAccumulatorRootUsdc::new_default(context);
     let result = accumulator.claim_for_order(denom, order_id, signer).await.map_err(|e| {
         crate::errors::AppError::from(e).with_context("claim_usdc: claim_for_order")
     })?;
@@ -370,7 +371,7 @@ pub async fn redeem_nackl(
 // Low-level token operation: send other tokens (non-native)
 #[allow(clippy::too_many_arguments)]
 pub async fn send_other_tokens(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     multifactor: &Arc<Multifactor>,
     epk_expire_at: u64,
     destination_address: String,
@@ -381,7 +382,7 @@ pub async fn send_other_tokens(
     bounce: Option<bool>,
 ) -> crate::errors::AppResult<ackinacki_kit::tvm_client::processing::ResultOfSendMessage> {
     let token_root = TokenRoot::new(
-        tvm_client.clone(),
+        context.clone(),
         crate::dapp::token_contract_params(token_root, token_dapp.as_str()),
     );
     let token_wallet_address_res = token_root
@@ -395,7 +396,7 @@ pub async fn send_other_tokens(
         })?;
 
     let token_wallet = TokenWallet::new(
-        tvm_client.clone(),
+        context.clone(),
         crate::dapp::token_contract_params(
             token_wallet_address_res.wallet_address,
             token_dapp.as_str(),
@@ -433,7 +434,7 @@ pub async fn send_other_tokens(
         })?;
 
     let tx = TokenTransaction::new(
-        tvm_client,
+        context,
         crate::dapp::token_contract_params(res_of_tx_addr.transaction_address, token_dapp.as_str()),
     );
     tx.wait_account(ParamsOfWaitAccount::default()).await.map_err(|e| {
@@ -471,7 +472,7 @@ const EXCHANGE_CALLBACK_VALUE: u128 = 5_000_000_000;
 /// `onTransferReceived` → mints ECC[3] → sends to sender.
 #[allow(clippy::too_many_arguments)]
 pub async fn migrate_tip3_usdc(
-    tvm_client: Arc<ClientContext>,
+    context: ContractContext,
     multifactor: &Arc<Multifactor>,
     epk_expire_at: u64,
     token_root: String,
@@ -487,7 +488,7 @@ pub async fn migrate_tip3_usdc(
     let exchange_address = Exchange::DEFAULT_ADDRESS;
 
     let token_root_contract = TokenRoot::new(
-        tvm_client.clone(),
+        context.clone(),
         crate::dapp::token_contract_params(token_root, token_dapp.as_str()),
     );
     let token_wallet_address_res = token_root_contract
@@ -501,7 +502,7 @@ pub async fn migrate_tip3_usdc(
         })?;
 
     let token_wallet = TokenWallet::new(
-        tvm_client.clone(),
+        context.clone(),
         crate::dapp::token_contract_params(
             token_wallet_address_res.wallet_address,
             token_dapp.as_str(),
@@ -540,7 +541,7 @@ pub async fn migrate_tip3_usdc(
         })?;
 
     let tx = TokenTransaction::new(
-        tvm_client,
+        context,
         crate::dapp::token_contract_params(res_of_tx_addr.transaction_address, token_dapp.as_str()),
     );
     tx.wait_account(ParamsOfWaitAccount::default()).await.map_err(|e| {

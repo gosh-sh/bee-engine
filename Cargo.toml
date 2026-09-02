@@ -11,6 +11,7 @@ members = [
     "bee_infra",
     "bee_crypto",
     "bee_errors",
+    "tools/queue_overflow_proxy",
 ]
 # `bee_sdk` is the wasm-aggregator (forces `single-wasm` on its deps, which
 # leaks wasm-only code into native builds via feature unification).
@@ -28,7 +29,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "5.0.0"
+version = "5.1.0"
 edition = "2024"
 license = "LicenseRef-Acki-Nacki-Node-License"
 license-file = "LICENSE.md"
@@ -41,7 +42,7 @@ rs_merkle = { version = "1.5.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Replicated from ackinacki-kit v5.1.1 (itself replicated from tvm-sdk v3.0.4.an).
+# Replicated from ackinacki-kit 6.0.0 (itself replicated from tvm-sdk v3.0.4.an).
 # Cargo `[patch]` tables only apply from the top-level workspace, so both tvm-sdk's
 # and the kit's own patches are ignored when they are consumed as git deps —
 # without these, tvm_vm's zk stack resolves TWO copies of halo2-axiom/halo2-base

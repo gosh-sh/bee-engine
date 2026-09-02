@@ -83,7 +83,7 @@ impl<'a> ZkpModule<'a> {
     ) -> AppResult<ResultOfAddZKPFactor> {
         let mut message_ids = Vec::new();
         let crypto = BeeCrypto::from_client_context(self.ctx.tvm_client.clone());
-        let root_contract = MobileVerifiersRoot::new_default(self.ctx.tvm_client.clone());
+        let root_contract = MobileVerifiersRoot::new_default(self.ctx.contract_context.clone());
         let indexer = root_contract
             .get_indexer(ParamsOfGetIndexer { name: params.wallet_name.clone() })
             .await
@@ -96,7 +96,7 @@ impl<'a> ZkpModule<'a> {
         })?;
 
         let multifactor_contract = MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             indexer_details.multifactor_address.clone(),
         );
         let multifactor = Arc::new(multifactor_contract);
@@ -205,7 +205,7 @@ impl<'a> ZkpModule<'a> {
     ) -> AppResult<ResultOfSendMessage> {
         self.ctx.acquire().await;
         let contract_raw = MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         );
         let contract = Arc::new(contract_raw);

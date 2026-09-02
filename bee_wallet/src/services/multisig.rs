@@ -24,6 +24,8 @@ use ackinacki_kit::contracts::account::Account;
 use ackinacki_kit::contracts::account::AccountStatus;
 use ackinacki_kit::contracts::account::ParamsOfWaitAccount;
 use ackinacki_kit::contracts::giver::v3::send_currency_with_flag_from_default_giver;
+use ackinacki_kit::contracts::multisig::Multisig;
+use ackinacki_kit::contracts::traits::SendMessage;
 use ackinacki_kit::tvm_client::abi::encode_message;
 use ackinacki_kit::tvm_client::abi::Abi;
 use ackinacki_kit::tvm_client::abi::CallSet;
@@ -32,14 +34,10 @@ use ackinacki_kit::tvm_client::abi::ParamsOfEncodeMessage;
 use ackinacki_kit::tvm_client::abi::Signer;
 use ackinacki_kit::tvm_client::crypto::generate_random_sign_keys;
 use ackinacki_kit::tvm_client::crypto::KeyPair;
-use ackinacki_kit::tvm_client::processing::process_message;
-use ackinacki_kit::tvm_client::processing::ParamsOfProcessMessage;
 use ackinacki_kit::tvm_client::ClientConfig;
 use ackinacki_kit::tvm_client::ClientContext;
 use base64::Engine;
-use bee_infra::with_retry_policy;
 use bee_infra::RateLimiter;
-use bee_infra::RetryPolicy;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
@@ -259,46 +257,16 @@ pub async fn deploy_multisig(
         });
     }
 
-    let processed = process_message(
-        ctx.clone(),
-        ParamsOfProcessMessage {
-            message_encode_params: encode_params,
-            send_events: false,
-            dapp_id,
-        },
-        // No progress events requested; an empty Send future satisfies the bound.
-        |_| async {},
-    )
-    .await;
-
-    let deploy_tx = match processed {
-        Ok(result) => result.transaction.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        // A failed *read-back* is not a failed deploy. `process_message` sends the
-        // message and then fetches the resulting transaction
-        // (`blockchain{transaction(hash){boc out_messages{boc}}}`); when that query
-        // fails, the deploy it just performed is reported as an error. Measured on
-        // shellnet with the `UpdateCustodianMultisigWallet` v2 build: the deploy
-        // lands (account Active, `exit_code: 0`, expected code hash) while the
-        // gateway answers that transaction query with HTTP 502 — reproducible with
-        // plain curl on the tx hash, because v2's ~7 KB of code makes for a much
-        // larger transaction BOC than older Multisig builds produced.
-        //
-        // So before believing the error, ask the chain (bounded: 10 × 1 s, error
-        // path only, even when `wait_for_active` is false — a wrong failure is
-        // worse than a short wait). Only the matching build + owner key can make
-        // *this* address Active (it's a state-init hash), so Active here can only
-        // be our own deploy. The tx id is unknowable at that point -> `None`.
-        Err(err) => {
-            let landed = account
-                .wait(ParamsOfWaitAccount { status: AccountStatus::Active, ..Default::default() })
-                .await
-                .is_ok();
-            if !landed {
-                return Err(AppError::from(err));
-            }
-            None
-        }
-    };
+    let multisig = Multisig::new(
+        crate::wallet_contract_context(ctx.clone()),
+        ackinacki_kit::contracts::account::ParamsOfNewContract::new(address.clone(), dapp_id),
+    );
+    let prepared = multisig
+        .prepare_message(encode_params.call_set, encode_params.deploy_set, encode_params.signer)
+        .await
+        .map_err(AppError::from)?;
+    let sent = multisig.send_prepared_message(&prepared).await.map_err(AppError::from)?;
+    let deploy_tx = sent.tx_hash;
 
     if wait_for_active {
         account
@@ -362,7 +330,8 @@ pub struct ResultOfDeployMultisigViaGiver {
 }
 
 /// Builds a `ClientContext` over the given endpoints, mirroring `WalletContext`
-/// (disable tvm_client's internal reconnect storm; we retry one layer up).
+/// and disabling tvm_client's internal reconnect storm. Contract writes use
+/// the exact-message delivery context created from this client.
 fn make_context(endpoints: Vec<String>) -> AppResult<Arc<ClientContext>> {
     let mut config = ClientConfig::default();
     config.network.endpoints = Some(endpoints);
@@ -377,71 +346,6 @@ fn parse_amount(field: &str, value: &str) -> AppResult<u64> {
     value
         .parse::<u64>()
         .map_err(|e| AppError::new(format!("invalid {field} amount `{value}`: {e}")))
-}
-
-/// 429 / throttling signal. tvm_client strips HTTP headers before surfacing
-/// errors, so the only things that survive are the numeric `server_code` (from
-/// GraphQL extensions) and the message text — match on those. Used to tag the
-/// terminal error as `rate_limited`.
-fn is_rate_limited(err: &AppError) -> bool {
-    let hit = |s: &str| {
-        let s = s.to_ascii_lowercase();
-        s.contains("server_code: 429") || s.contains("too many requests")
-    };
-    hit(&err.message) || err.details.as_deref().is_some_and(hit)
-}
-
-/// Retry predicate for on-chain sends: the HTTP-transient classes
-/// (429 / 5xx / 408 / 425 / resets / timeouts) plus the explicit 429 signal.
-fn send_should_retry(err: &AppError) -> bool {
-    crate::infra::is_retryable_http_transient(err) || is_rate_limited(err)
-}
-
-/// Maps the error left after retries are exhausted. A throttled send becomes a
-/// typed `rate_limited` error whose message starts with a stable `RateLimited:`
-/// prefix, so the UI can show "busy, try later" instead of a generic transport
-/// failure. Anything else just gets `context` prepended (legacy behavior).
-fn tag_terminal_send_error(err: AppError, context: &str) -> AppError {
-    if is_rate_limited(&err) {
-        let mut tagged = AppError::new(format!("RateLimited: {context}: {}", err.message))
-            .with_kind("rate_limited");
-        if let Some(details) = err.details {
-            tagged = tagged.with_details(details);
-        }
-        tagged
-    } else {
-        err.with_context(context)
-    }
-}
-
-/// Runs one on-chain send under `policy` + the shared rate limiter (acquired
-/// before every attempt, so retries count against the rps budget), retagging an
-/// exhausted-retry failure via [`tag_terminal_send_error`].
-async fn send_with_retry_policy<T, F, Fut>(
-    policy: &RetryPolicy,
-    rl: Option<&RateLimiter>,
-    context: &str,
-    op: F,
-) -> AppResult<T>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = AppResult<T>>,
-{
-    with_retry_policy(policy, rl, send_should_retry, op)
-        .await
-        .map_err(|e| tag_terminal_send_error(e, context))
-}
-
-/// [`send_with_retry_policy`] with the default HTTP policy: 5 attempts, 60 s
-/// total cap, 500 ms→30 s exponential backoff + jitter. `Retry-After` is
-/// invisible at the tvm_client layer (headers stripped), so backoff substitutes
-/// — the consumer's frontend is the only layer that can honor `Retry-After`.
-async fn send_with_retry<T, F, Fut>(rl: Option<&RateLimiter>, context: &str, op: F) -> AppResult<T>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = AppResult<T>>,
-{
-    send_with_retry_policy(&RetryPolicy::http_default(), rl, context, op).await
 }
 
 /// Fully client-side Multisig deploy on shellnet: compute the address
@@ -503,44 +407,39 @@ pub async fn deploy_multisig_via_giver(
         None => DEFAULT_GIVER_VALUE,
     };
 
-    // Shared limiter for ALL sends below (create → deploy → ECC top-up) plus
-    // their retries: ≤2 sends/s globally, ≥500 ms apart. Keeps us under the
+    // Shared limiter for ALL sends below (create → deploy → ECC top-up):
+    // ≤2 sends/s globally, ≥500 ms apart. Keeps us under the
     // node's ~3-sends/s throttle so a multivalue funded deploy doesn't burst.
-    let rl = Some(RateLimiter::new(MAX_SEND_RPS));
+    let rate_limiter = RateLimiter::new(MAX_SEND_RPS);
+    let delivery_context = crate::wallet_contract_context(ctx.clone());
 
     let mut create_ecc = HashMap::new();
     create_ecc.insert(SHELL_CURRENCY_ID, giver_value);
-    send_with_retry(
-        rl.as_ref(),
-        "giver account-creation failed (giver is available on shellnet only)",
-        || {
-            let ctx = ctx.clone();
-            let create_ecc = create_ecc.clone();
-            let address = address.clone();
-            async move {
-                send_currency_with_flag_from_default_giver(ctx, &address, 0, create_ecc, GIVER_FLAG)
-                    .await
-                    .map_err(AppError::from)
-            }
-        },
+    rate_limiter.acquire().await;
+    send_currency_with_flag_from_default_giver(
+        delivery_context.clone(),
+        &address,
+        0,
+        create_ecc,
+        GIVER_FLAG,
     )
-    .await?;
+    .await
+    .map_err(AppError::from)
+    .map_err(|error| {
+        error.with_context("giver account-creation failed (giver is available on shellnet only)")
+    })?;
 
     // Wait until the value message lands and the account exists (Uninit).
     account
         .wait(ParamsOfWaitAccount { status: AccountStatus::Uninit, ..Default::default() })
         .await?;
 
-    // Brick 3 — deploy now that the address is funded. Retried as a unit: it's
-    // idempotent (re-checks Active first), so a 429 mid-deploy just re-enters
-    // and either resends or returns the already-Active outcome.
+    // Brick 3 — deploy now that the address is funded.
     let wait_for_active = params.wait_for_active.unwrap_or(true);
-    let outcome = send_with_retry(rl.as_ref(), "multisig deploy failed", || {
-        let ctx = ctx.clone();
-        let spec = spec.clone();
-        async move { deploy_multisig(ctx, &spec, wait_for_active).await }
-    })
-    .await?;
+    rate_limiter.acquire().await;
+    let outcome = deploy_multisig(ctx.clone(), &spec, wait_for_active)
+        .await
+        .map_err(|error| error.with_context("multisig deploy failed"))?;
 
     // Brick 4 — held ECC top-up (NACKL/SHELL/USDC) AFTER the multisig is deployed
     // (Active), via flag-1 (NOT flag-16). To a live account flag-1 keeps every
@@ -550,27 +449,19 @@ pub async fn deploy_multisig_via_giver(
         giver_ecc.insert(currency, parse_amount("giver_ecc", &amount)?);
     }
     if !giver_ecc.is_empty() {
-        send_with_retry(
-            rl.as_ref(),
-            "giver ECC top-up failed (giver is available on shellnet only)",
-            || {
-                let ctx = ctx.clone();
-                let giver_ecc = giver_ecc.clone();
-                let address = address.clone();
-                async move {
-                    send_currency_with_flag_from_default_giver(
-                        ctx,
-                        &address,
-                        ECC_TOPUP_GAS,
-                        giver_ecc,
-                        1,
-                    )
-                    .await
-                    .map_err(AppError::from)
-                }
-            },
+        rate_limiter.acquire().await;
+        send_currency_with_flag_from_default_giver(
+            delivery_context,
+            &address,
+            ECC_TOPUP_GAS,
+            giver_ecc,
+            1,
         )
-        .await?;
+        .await
+        .map_err(AppError::from)
+        .map_err(|error| {
+            error.with_context("giver ECC top-up failed (giver is available on shellnet only)")
+        })?;
     }
 
     Ok(ResultOfDeployMultisigViaGiver {
@@ -609,22 +500,11 @@ pub async fn multisig_balances(
     Ok(account.ecc.iter().map(|(k, v)| (*k, v.to_string())).collect())
 }
 
-// Native-only: the send retry/throttle behavior is what the shellnet 429 storm
-// hit. The on-chain sends themselves need a live giver, but the retry decision,
-// the throttle classifier, and the typed-error tagging are pure and tested
-// here.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::sync::atomic::AtomicU32;
-    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     use super::*;
-
-    /// A 429 as tvm_client would surface it once stripped to text.
-    fn err_429() -> AppError {
-        AppError::new("GraphQL request failed: server_code: 429 Too Many Requests")
-    }
 
     /// Spec with a fixed (bogus but well-formed) keypair — these tests never
     /// sign, they only exercise constructor input and validation.
@@ -636,17 +516,6 @@ mod tests {
             req_confirms_data: 1,
             constructor_value: "0".to_string(),
             balance_config: None,
-        }
-    }
-
-    /// Fast policy for tests: real backoff math, 1 ms sleeps, no jitter.
-    fn fast_policy(max_attempts: u32) -> RetryPolicy {
-        RetryPolicy {
-            max_attempts,
-            max_total: None,
-            base_delay: Duration::from_millis(1),
-            max_delay: Duration::from_millis(1),
-            jitter: false,
         }
     }
 
@@ -759,83 +628,6 @@ mod tests {
         .expect_err("removed selector must not silently fall back")
         .to_string();
         assert!(error.contains("unknown field `code`"), "got: {error}");
-    }
-
-    #[test]
-    fn is_rate_limited_recognizes_429_in_message_and_details() {
-        assert!(is_rate_limited(&err_429()));
-        assert!(is_rate_limited(
-            &AppError::new("boom").with_details("nested: 429 too many requests")
-        ));
-        // Not a throttle:
-        assert!(!is_rate_limited(&AppError::new("connection reset by peer")));
-        assert!(!is_rate_limited(&AppError::new("server_code: 500 internal")));
-    }
-
-    #[test]
-    fn send_should_retry_covers_429_and_5xx_but_not_hard_errors() {
-        assert!(send_should_retry(&err_429()));
-        assert!(send_should_retry(&AppError::new("server_code: 503 service unavailable")));
-        assert!(!send_should_retry(&AppError::new("invalid giver_value amount `x`")));
-    }
-
-    #[test]
-    fn tag_terminal_send_error_marks_throttle_with_prefix() {
-        let tagged = tag_terminal_send_error(err_429(), "giver account-creation failed");
-        assert_eq!(tagged.kind.as_deref(), Some("rate_limited"));
-        assert!(tagged.message.starts_with("RateLimited:"), "got: {}", tagged.message);
-    }
-
-    #[test]
-    fn tag_terminal_send_error_passes_through_non_throttle() {
-        let tagged = tag_terminal_send_error(AppError::new("hard failure"), "ctx");
-        assert_ne!(tagged.kind.as_deref(), Some("rate_limited"));
-        assert!(tagged.message.starts_with("ctx:"), "got: {}", tagged.message);
-    }
-
-    #[tokio::test]
-    async fn retries_throttled_send_then_succeeds() {
-        let calls = AtomicU32::new(0);
-        let res: AppResult<u32> = send_with_retry_policy(&fast_policy(5), None, "ctx", || {
-            let n = calls.fetch_add(1, Ordering::SeqCst);
-            async move {
-                if n < 2 {
-                    Err(err_429())
-                } else {
-                    Ok(7)
-                }
-            }
-        })
-        .await;
-        assert_eq!(res.unwrap(), 7);
-        assert_eq!(calls.load(Ordering::SeqCst), 3, "two 429s then success");
-    }
-
-    #[tokio::test]
-    async fn exhausted_throttle_returns_typed_rate_limited() {
-        let calls = AtomicU32::new(0);
-        let res: AppResult<u32> =
-            send_with_retry_policy(&fast_policy(3), None, "giver ECC top-up failed", || {
-                calls.fetch_add(1, Ordering::SeqCst);
-                async move { Err::<u32, _>(err_429()) }
-            })
-            .await;
-        let err = res.unwrap_err();
-        assert_eq!(err.kind.as_deref(), Some("rate_limited"));
-        assert!(err.message.starts_with("RateLimited:"), "got: {}", err.message);
-        assert_eq!(calls.load(Ordering::SeqCst), 3, "all attempts spent");
-    }
-
-    #[tokio::test]
-    async fn non_retryable_error_is_not_retried() {
-        let calls = AtomicU32::new(0);
-        let res: AppResult<u32> = send_with_retry_policy(&fast_policy(5), None, "ctx", || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            async move { Err::<u32, _>(AppError::new("hard failure")) }
-        })
-        .await;
-        assert!(res.is_err());
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "hard error must not retry");
     }
 
     #[tokio::test]

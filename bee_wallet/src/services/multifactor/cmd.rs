@@ -382,28 +382,15 @@ pub async fn change_seed_phrase(
         push_message_id(&mut message_ids, message_id);
     }
 
-    let message_id = {
-        let mf = Arc::clone(multifactor);
-        let sig = new_owner_pubkey_sig.clone();
-        let pubkey = new_owner_pubkey.clone();
-        let keys = params.signer_keys.clone();
-        crate::infra::with_retry(
-            move || {
-                let mf = mf.clone();
-                let sig = sig.clone();
-                let pubkey = pubkey.clone();
-                let keys = keys.clone();
-                async move {
-                    submit_change_seed_phrase(&mf, epk_expire_at, sig, pubkey, keys).await
-                }
-            },
-            3,
-            3000,
-            None::<fn(&crate::errors::AppError) -> bool>,
-        )
-        .await
-        .map_err(|e| e.with_context("change_seed_phrase step 2: submit"))?
-    };
+    let message_id = submit_change_seed_phrase(
+        multifactor,
+        epk_expire_at,
+        new_owner_pubkey_sig,
+        new_owner_pubkey,
+        params.signer_keys.clone(),
+    )
+    .await
+    .map_err(|e| e.with_context("change_seed_phrase step 2: submit"))?;
     push_message_id(&mut message_ids, message_id);
 
     // `acceptCandidateSeedPhrase` must be signed by the recovery key. Pre-v3
@@ -420,24 +407,13 @@ pub async fn change_seed_phrase(
         &multifactor_data.pub_recovery_key,
     )?;
 
-    let message_id = {
-        let mf = Arc::clone(multifactor);
-        let pubkey = format!("0x{}", params.new_owner_keys.public);
-        let keys = recovery_signer;
-        crate::infra::with_retry(
-            move || {
-                let mf = mf.clone();
-                let pubkey = pubkey.clone();
-                let keys = keys.clone();
-                async move { accept_candidate_seed_phrase_and_wait(&mf, pubkey, keys).await }
-            },
-            3,
-            3000,
-            None::<fn(&crate::errors::AppError) -> bool>,
-        )
-        .await
-        .map_err(|e| e.with_context("change_seed_phrase step 3: accept"))?
-    };
+    let message_id = accept_candidate_seed_phrase_and_wait(
+        multifactor,
+        format!("0x{}", params.new_owner_keys.public),
+        recovery_signer,
+    )
+    .await
+    .map_err(|e| e.with_context("change_seed_phrase step 3: accept"))?;
     push_message_id(&mut message_ids, message_id);
 
     Ok(ResultOfChangeSeedPhrase { message_ids })

@@ -50,7 +50,7 @@ impl<'a> TokensModule<'a> {
     pub async fn send_tokens(&self, params: SendTokensReq) -> AppResult<ResultOfSendMessage> {
         self.ctx.acquire().await;
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -76,7 +76,7 @@ impl<'a> TokensModule<'a> {
             .await?
         } else {
             services::tokens::send_other_tokens(
-                self.ctx.tvm_client.clone(),
+                self.ctx.contract_context.clone(),
                 &multifactor,
                 epk_expire_at,
                 params.destination_address,
@@ -97,7 +97,7 @@ impl<'a> TokensModule<'a> {
         params: SendTokensDirectReq,
     ) -> AppResult<ResultOfSendMessage> {
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -128,7 +128,7 @@ impl<'a> TokensModule<'a> {
     pub async fn buy_shells(&self, params: BuyShellsReq) -> AppResult<ResultOfSendMessage> {
         self.ctx.acquire().await;
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -154,7 +154,7 @@ impl<'a> TokensModule<'a> {
     pub async fn sell_shells(&self, params: SellShellsReq) -> AppResult<SellShellsResult> {
         self.ctx.acquire().await;
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -183,7 +183,7 @@ impl<'a> TokensModule<'a> {
         let signer = Signer::Keys { keys: params.signer_keys };
 
         services::tokens::claim_usdc(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.denom,
             params.order_id,
             signer,
@@ -213,7 +213,7 @@ impl<'a> TokensModule<'a> {
         }
 
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -241,7 +241,7 @@ impl<'a> TokensModule<'a> {
         params: MigrateTip3UsdcReq,
     ) -> AppResult<ResultOfSendMessage> {
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
         let epk_expire_at = multifactor
@@ -255,7 +255,7 @@ impl<'a> TokensModule<'a> {
         let signer = Signer::Keys { keys: params.signer_keys };
 
         services::tokens::migrate_tip3_usdc(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             &multifactor,
             epk_expire_at,
             params.token_root,
@@ -275,9 +275,9 @@ impl<'a> TokensModule<'a> {
         &self,
         params: WithdrawPopitgameRewardsReq,
     ) -> AppResult<ResultOfSendMessage> {
-        let verifiers_root = MobileVerifiersRoot::new_default(self.ctx.tvm_client.clone());
+        let verifiers_root = MobileVerifiersRoot::new_default(self.ctx.contract_context.clone());
         let multifactor = Arc::new(MvMultifactor::new_default(
-            self.ctx.tvm_client.clone(),
+            self.ctx.contract_context.clone(),
             params.multifactor_address.clone(),
         ));
 

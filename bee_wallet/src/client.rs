@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ackinacki_kit::contracts::delivery::ContractContext;
 use ackinacki_kit::tvm_client::ClientConfig;
 use ackinacki_kit::tvm_client::ClientContext;
 
@@ -38,6 +39,7 @@ pub struct WalletConfig {
 
 pub(crate) struct WalletContext {
     pub(crate) tvm_client: Arc<ClientContext>,
+    pub(crate) contract_context: ContractContext,
     /// Optional TVM client pointing to the archive data endpoint.
     pub(crate) archive_tvm_client: Option<Arc<ClientContext>>,
     pub(crate) api_url: String,
@@ -58,8 +60,8 @@ impl WalletContext {
         // Disable tvm_client's internal `query_graphql` re-connect loop —
         // it spins without sleep on multi-endpoint setups and turns a
         // single 502 into a sustained ~60 rps storm against the same BM.
-        // We do bounded, classified retries one layer up via
-        // `bee_infra::retry::with_retry_policy`.
+        // Read paths may apply bounded retries one layer up. Writes use the
+        // exact-message policy configured in `contract_context` below.
         tvm_config.network.max_reconnect_timeout = 0;
         tvm_config.network.api_token = api_token.clone();
         let client = ClientContext::new(tvm_config).map_err(|e| {
@@ -79,8 +81,11 @@ impl WalletContext {
             })
             .transpose()?;
 
+        let tvm_client = Arc::new(client);
+
         Ok(Self {
-            tvm_client: Arc::new(client),
+            contract_context: crate::wallet_contract_context(tvm_client.clone()),
+            tvm_client,
             archive_tvm_client: archive_client.map(Arc::new),
             api_url,
             app_id,

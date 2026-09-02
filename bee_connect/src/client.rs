@@ -612,7 +612,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         Ok(profile.is_deployed().await)
     }
 
@@ -649,7 +649,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let created_at_from = params
@@ -718,7 +718,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let created_at_from = params
@@ -789,7 +789,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let body = params
@@ -870,7 +870,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let body = serde_json::to_value(SetMiningKeysBody {
@@ -955,7 +955,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let body = serde_json::to_value(SignChallengeBody { nonce: params.nonce.clone() })
@@ -1034,7 +1034,7 @@ impl ConnectClient {
             })?
             .profile;
 
-        let profile = AuthProfile::new_default(root.context().clone(), &profile_address);
+        let profile = AuthProfile::new_default(root.contract_context(), &profile_address);
         wait_profile_active(&profile, params.max_attempts, params.interval_ms).await?;
 
         let created_at_from = params
@@ -1133,7 +1133,7 @@ impl ConnectClient {
                     Some(cached) => cached,
                     None => {
                         let profile =
-                            AuthProfile::new_default(root.context().clone(), &record.data.profile);
+                            AuthProfile::new_default(root.contract_context(), &record.data.profile);
                         let value = profile.is_deployed().await;
                         deployed_cache.insert(record.data.profile.clone(), value);
                         value
@@ -1684,8 +1684,7 @@ fn root_with_endpoints(
     // Disable tvm_client's internal `query_graphql` re-connect loop —
     // it spins without sleep on multi-endpoint setups and turns a
     // single 502 into a sustained ~60 rps storm against the same BM.
-    // We do bounded, classified retries one layer up via
-    // `bee_infra::retry::with_retry_policy`.
+    // Writes use the exact-message policy installed on the root below.
     cfg.network.max_reconnect_timeout = 0;
     // Authenticate against BM when the caller supplied a token. `None` keeps
     // the request anonymous (wasm/browser default). Every ConnectClient method
@@ -1694,7 +1693,7 @@ fn root_with_endpoints(
     let context = ClientContext::new(cfg)
         .map_err(|e| crate::errors::AppError::from(e).with_context("Create tvm client context"))?;
     let context = Arc::new(context);
-    Ok(AuthServiceRoot::new_default(context))
+    Ok(AuthServiceRoot::new_default(bee_infra::message_delivery::contract_context(context)))
 }
 
 fn encode_connect_message(
