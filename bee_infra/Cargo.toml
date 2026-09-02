@@ -11,7 +11,7 @@ wasm = ["dep:gloo-timers", "dep:js-sys", "ackinacki-kit?/wasm"]
 tokio = ["dep:tokio"]
 
 [dependencies]
-ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", rev = "d03d2cb83eaf2aef77a104f6f0e2d0febfde4b26", optional = true, default-features = false, features = ["contracts"] }
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v6.0.0", optional = true, default-features = false, features = ["contracts"] }
 async-trait = { version = "0.1", optional = true }
 gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
 js-sys = { version = "0.3.83", optional = true }
