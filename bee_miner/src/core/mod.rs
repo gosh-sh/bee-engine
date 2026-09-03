@@ -1,4 +1,5 @@
+pub mod chain;
 pub mod context;
 pub mod keys;
-mod merkle;
+pub(crate) mod merkle;
 mod processor;
