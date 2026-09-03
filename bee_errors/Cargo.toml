@@ -10,7 +10,7 @@ wasm = ["ackinacki-kit/wasm", "ackinacki-kit/contracts"]
 single-wasm = ["wasm"]
 
 [dependencies]
-ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v6.0.0", default-features = false }
+ackinacki-kit = { git = "https://github.com/gosh-sh/ackinacki-kit.git", tag = "v6.1.0", default-features = false }
 base64 = "0.22.1"
 hex = { workspace = true }
 pbkdf2 = { version = "0.12.2", features = ["simple"] }
