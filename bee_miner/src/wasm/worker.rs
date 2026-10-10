@@ -3,9 +3,13 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::rc::Rc;
 
+use ackinacki_kit::contracts::deserialize::deserialize_u32;
 use ackinacki_kit::contracts::mvsystem;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfSubmitSession;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfVerifySession;
+use ackinacki_kit::contracts::traits::AccountAccessor;
+use ackinacki_kit::contracts::traits::DecodeAccountData;
+use ackinacki_kit::shared::traits::guarded::AsyncGuarded;
 use ackinacki_kit::tvm_client::abi::Signer;
 use ackinacki_kit::tvm_client::crypto::KeyPair;
 use bee_shared::miner::SessionProof;
@@ -14,6 +18,7 @@ use bee_shared::verifier;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::mpsc::UnboundedSender;
 use futures::StreamExt;
+use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use wasm_bindgen::JsValue;
@@ -104,11 +109,19 @@ pub(crate) async fn run(
         ),
     );
 
+    // Resolve the complexity the contract will verify this seed against
+    let (easy_complexity, hard_complexity) = match get_session_complexity(&worker).await {
+        Ok(Some(complexity)) => complexity,
+        Ok(None) => (worker.easy_complexity, worker.hard_complexity),
+        Err(e) => {
+            web_sys::console::error_1(&e.into());
+            (worker.easy_complexity, worker.hard_complexity)
+        }
+    };
+
     // Initialize miner cores
-    let mut time_core =
-        MiningCore::new(worker.seed.clone(), worker.duration_ms, worker.easy_complexity);
-    let mut tap_core =
-        MiningCore::new(worker.seed.clone(), worker.duration_ms, worker.hard_complexity);
+    let mut time_core = MiningCore::new(worker.seed.clone(), worker.duration_ms, easy_complexity);
+    let mut tap_core = MiningCore::new(worker.seed.clone(), worker.duration_ms, hard_complexity);
 
     // Start computation loop
     let start_ms = js_sys::Date::now() as u64;
@@ -302,6 +315,55 @@ fn shutdown_worker(
             })),
         ),
     );
+}
+
+#[derive(Deserialize)]
+struct MinerComplexityData {
+    #[serde(rename = "_seed")]
+    seed: String,
+    #[serde(rename = "_seedNext")]
+    next_seed: String,
+    #[serde(rename = "_easyComplexity", deserialize_with = "deserialize_u32")]
+    easy: u32,
+    #[serde(rename = "_hardComplexity", deserialize_with = "deserialize_u32")]
+    hard: u32,
+    #[serde(rename = "_easyComplexityOld", deserialize_with = "deserialize_u32")]
+    easy_old: u32,
+    #[serde(rename = "_hardComplexityOld", deserialize_with = "deserialize_u32")]
+    hard_old: u32,
+}
+
+/// Complexity the contract will verify a session on `worker.seed` against.
+///
+/// The miner contract verifies the current seed with `_*ComplexityOld`, which
+/// only takes the value of `_*Complexity` when a session is accepted. After the
+/// game root changes complexity, mining with `_*Complexity` (what `getDetails`
+/// and `NewComplexity` report) would be rejected on every session.
+///
+/// For the next seed the old value is not known yet: it becomes the current
+/// `_*Complexity` once the in-flight session is accepted, so that is used.
+/// Returns `None` for a seed the contract no longer knows.
+async fn get_session_complexity(worker: &MinerWorker) -> Result<Option<(u32, u32)>, String> {
+    worker.contract.fetch_account().await.map_err(|e| format!("Fetch miner account data ({e})"))?;
+
+    let Some(data) = worker.contract.async_guarded(|account| account.data.clone()).await else {
+        return Err("Miner account has no data".to_string());
+    };
+
+    let value = worker
+        .contract
+        .decode_account_data(data)
+        .map_err(|e| format!("Decode miner account data ({e})"))?;
+    let data = serde_json::from_value::<MinerComplexityData>(value)
+        .map_err(|e| format!("Deserialize miner complexity data ({e})"))?;
+
+    if worker.seed == data.seed {
+        Ok(Some((data.easy_old, data.hard_old)))
+    } else if worker.seed == data.next_seed {
+        Ok(Some((data.easy, data.hard)))
+    } else {
+        Ok(None)
+    }
 }
 
 async fn submit_session_root(
