@@ -26,14 +26,24 @@ pub struct MinerComplexityData {
 /// game root changes complexity, mining with `_*Complexity` (what `getDetails`
 /// and `NewComplexity` report) would be rejected on every session.
 ///
-/// For the next seed the old value is not known yet: it becomes the current
-/// `_*Complexity` once the in-flight session is accepted, so that is used.
+/// The next seed becomes current in one of two ways: the in-flight session is
+/// accepted (`Old` takes `_*Complexity`), or a stale commit is cancelled
+/// (`cancelCommitData` rotates the seed and leaves `Old` as it is). So for the
+/// next seed `_*Complexity` is used only while another session is in flight.
 /// Returns `None` for a seed the contract no longer knows.
-pub fn select_session_complexity(seed: &str, data: &MinerComplexityData) -> Option<(u32, u32)> {
+pub fn select_session_complexity(
+    seed: &str,
+    data: &MinerComplexityData,
+    session_in_flight: bool,
+) -> Option<(u32, u32)> {
     if seed == data.seed {
         Some((data.easy_old, data.hard_old))
     } else if seed == data.next_seed {
-        Some((data.easy, data.hard))
+        if session_in_flight {
+            Some((data.easy, data.hard))
+        } else {
+            Some((data.easy_old, data.hard_old))
+        }
     } else {
         None
     }
@@ -62,35 +72,49 @@ mod tests {
     #[test]
     fn current_seed_uses_old_complexity_after_switch() {
         let d = data(10, 12, 10, 11);
-        assert_eq!(select_session_complexity("0xseed", &d), Some((10, 11)));
+        assert_eq!(select_session_complexity("0xseed", &d, false), Some((10, 11)));
+        assert_eq!(select_session_complexity("0xseed", &d, true), Some((10, 11)));
     }
 
     #[test]
-    fn next_seed_uses_current_complexity() {
+    fn next_seed_after_accepted_session_uses_current_complexity() {
+        // A session on the current seed is being submitted: once accepted,
+        // `Old` takes `_*Complexity`.
         let d = data(10, 12, 10, 11);
-        assert_eq!(select_session_complexity("0xnext", &d), Some((10, 12)));
+        assert_eq!(select_session_complexity("0xnext", &d, true), Some((10, 12)));
+    }
+
+    #[test]
+    fn next_seed_after_cancelled_commit_uses_old_complexity() {
+        // `Miner::new` cancels a stale commit and mines on the next seed before
+        // the cancel lands: `cancelCommitData` does not touch `Old`.
+        let d = data(10, 12, 10, 11);
+        assert_eq!(select_session_complexity("0xnext", &d, false), Some((10, 11)));
     }
 
     #[test]
     fn unknown_seed_is_none() {
         let d = data(10, 12, 10, 11);
-        assert_eq!(select_session_complexity("0xstale", &d), None);
+        assert_eq!(select_session_complexity("0xstale", &d, false), None);
+        assert_eq!(select_session_complexity("0xstale", &d, true), None);
     }
 
     #[test]
     fn unchanged_complexity_matches_previous_behaviour() {
-        // Before any change `Old == current`, so both seeds get what
+        // Before any change `Old == current`, so every seed gets what
         // `getDetails` reports — same as the client before this fix.
         let d = data(10, 11, 10, 11);
-        assert_eq!(select_session_complexity("0xseed", &d), Some((10, 11)));
-        assert_eq!(select_session_complexity("0xnext", &d), Some((10, 11)));
+        for in_flight in [false, true] {
+            assert_eq!(select_session_complexity("0xseed", &d, in_flight), Some((10, 11)));
+            assert_eq!(select_session_complexity("0xnext", &d, in_flight), Some((10, 11)));
+        }
     }
 
     #[test]
     fn easy_and_hard_are_resolved_independently() {
         let d = data(13, 19, 12, 18);
-        assert_eq!(select_session_complexity("0xseed", &d), Some((12, 18)));
-        assert_eq!(select_session_complexity("0xnext", &d), Some((13, 19)));
+        assert_eq!(select_session_complexity("0xseed", &d, false), Some((12, 18)));
+        assert_eq!(select_session_complexity("0xnext", &d, true), Some((13, 19)));
     }
 
     #[test]
@@ -100,7 +124,8 @@ mod tests {
 
         assert_eq!((d.easy, d.hard), (10, 12));
         assert_eq!((d.easy_old, d.hard_old), (10, 11));
-        assert_eq!(select_session_complexity(&d.seed, &d), Some((10, 11)));
-        assert_eq!(select_session_complexity(&d.next_seed, &d), Some((10, 12)));
+        assert_eq!(select_session_complexity(&d.seed, &d, false), Some((10, 11)));
+        assert_eq!(select_session_complexity(&d.next_seed, &d, false), Some((10, 11)));
+        assert_eq!(select_session_complexity(&d.next_seed, &d, true), Some((10, 12)));
     }
 }

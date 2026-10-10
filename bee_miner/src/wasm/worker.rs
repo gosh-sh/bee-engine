@@ -110,14 +110,19 @@ pub(crate) async fn run(
     );
 
     // Resolve the complexity the contract will verify this seed against
-    let (easy_complexity, hard_complexity) = match get_session_complexity(&worker).await {
-        Ok(Some(complexity)) => complexity,
-        Ok(None) => (worker.easy_complexity, worker.hard_complexity),
-        Err(e) => {
-            web_sys::console::error_1(&e.into());
-            (worker.easy_complexity, worker.hard_complexity)
-        }
-    };
+    let session_in_flight = workers_ref
+        .borrow()
+        .iter()
+        .any(|w| w.id != worker.id && w.status == MinerStatus::Submitting);
+    let (easy_complexity, hard_complexity) =
+        match get_session_complexity(&worker, session_in_flight).await {
+            Ok(Some(complexity)) => complexity,
+            Ok(None) => (worker.easy_complexity, worker.hard_complexity),
+            Err(e) => {
+                web_sys::console::error_1(&e.into());
+                (worker.easy_complexity, worker.hard_complexity)
+            }
+        };
 
     // Initialize miner cores
     let mut time_core = MiningCore::new(worker.seed.clone(), worker.duration_ms, easy_complexity);
@@ -319,7 +324,10 @@ fn shutdown_worker(
 
 /// Complexity the contract will verify a session on `worker.seed` against,
 /// read from the miner account data. See [`select_session_complexity`].
-async fn get_session_complexity(worker: &MinerWorker) -> Result<Option<(u32, u32)>, String> {
+async fn get_session_complexity(
+    worker: &MinerWorker,
+    session_in_flight: bool,
+) -> Result<Option<(u32, u32)>, String> {
     worker.contract.fetch_account().await.map_err(|e| format!("Fetch miner account data ({e})"))?;
 
     let Some(data) = worker.contract.async_guarded(|account| account.data.clone()).await else {
@@ -333,7 +341,7 @@ async fn get_session_complexity(worker: &MinerWorker) -> Result<Option<(u32, u32
     let data = serde_json::from_value::<MinerComplexityData>(value)
         .map_err(|e| format!("Deserialize miner complexity data ({e})"))?;
 
-    Ok(select_session_complexity(&worker.seed, &data))
+    Ok(select_session_complexity(&worker.seed, &data, session_in_flight))
 }
 
 async fn submit_session_root(
