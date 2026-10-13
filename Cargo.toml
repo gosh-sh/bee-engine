@@ -29,7 +29,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "5.1.1"
+version = "6.0.0"
 edition = "2024"
 license = "LicenseRef-Acki-Nacki-Node-License"
 license-file = "LICENSE.md"
