@@ -6,6 +6,9 @@ use std::rc::Rc;
 use ackinacki_kit::contracts::mvsystem;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfSubmitSession;
 use ackinacki_kit::contracts::mvsystem::miner::contract::ParamsOfVerifySession;
+use ackinacki_kit::contracts::traits::AccountAccessor;
+use ackinacki_kit::contracts::traits::DecodeAccountData;
+use ackinacki_kit::shared::traits::guarded::AsyncGuarded;
 use ackinacki_kit::tvm_client::abi::Signer;
 use ackinacki_kit::tvm_client::crypto::KeyPair;
 use bee_shared::miner::SessionProof;
@@ -21,6 +24,8 @@ use wasm_bindgen::JsValue;
 use crate::core::context::MiningCore;
 use crate::core::context::ParamsOfCompute;
 use crate::core::context::ResultOfGetMerkleSnapshot;
+use crate::core::session_complexity::select_session_complexity;
+use crate::core::session_complexity::MinerComplexityData;
 use crate::wasm::DecodedSessionStatusData;
 
 #[derive(Clone)]
@@ -104,11 +109,24 @@ pub(crate) async fn run(
         ),
     );
 
+    // Resolve the complexity the contract will verify this seed against
+    let session_in_flight = workers_ref
+        .borrow()
+        .iter()
+        .any(|w| w.id != worker.id && w.status == MinerStatus::Submitting);
+    let (easy_complexity, hard_complexity) =
+        match get_session_complexity(&worker, session_in_flight).await {
+            Ok(Some(complexity)) => complexity,
+            Ok(None) => (worker.easy_complexity, worker.hard_complexity),
+            Err(e) => {
+                web_sys::console::error_1(&e.into());
+                (worker.easy_complexity, worker.hard_complexity)
+            }
+        };
+
     // Initialize miner cores
-    let mut time_core =
-        MiningCore::new(worker.seed.clone(), worker.duration_ms, worker.easy_complexity);
-    let mut tap_core =
-        MiningCore::new(worker.seed.clone(), worker.duration_ms, worker.hard_complexity);
+    let mut time_core = MiningCore::new(worker.seed.clone(), worker.duration_ms, easy_complexity);
+    let mut tap_core = MiningCore::new(worker.seed.clone(), worker.duration_ms, hard_complexity);
 
     // Start computation loop
     let start_ms = js_sys::Date::now() as u64;
@@ -302,6 +320,28 @@ fn shutdown_worker(
             })),
         ),
     );
+}
+
+/// Complexity the contract will verify a session on `worker.seed` against,
+/// read from the miner account data. See [`select_session_complexity`].
+async fn get_session_complexity(
+    worker: &MinerWorker,
+    session_in_flight: bool,
+) -> Result<Option<(u32, u32)>, String> {
+    worker.contract.fetch_account().await.map_err(|e| format!("Fetch miner account data ({e})"))?;
+
+    let Some(data) = worker.contract.async_guarded(|account| account.data.clone()).await else {
+        return Err("Miner account has no data".to_string());
+    };
+
+    let value = worker
+        .contract
+        .decode_account_data(data)
+        .map_err(|e| format!("Decode miner account data ({e})"))?;
+    let data = serde_json::from_value::<MinerComplexityData>(value)
+        .map_err(|e| format!("Deserialize miner complexity data ({e})"))?;
+
+    Ok(select_session_complexity(&worker.seed, &data, session_in_flight))
 }
 
 async fn submit_session_root(
