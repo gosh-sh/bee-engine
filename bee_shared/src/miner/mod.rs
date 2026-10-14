@@ -3,6 +3,7 @@ use borsh::BorshSerialize;
 
 use crate::miner::leaf::ComputedLeaf;
 
+pub mod chain;
 pub mod leaf;
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
